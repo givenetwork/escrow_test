@@ -33,13 +33,15 @@ app.listen(process.env.API_PORT || 3000, function(){
 });
 
 app.get('/accounts/add',function(req,res) {
-  addAccountListener(req.query.id);
-  res.json({ success: 1, status: "Account added " . res.query.id });
+  accountId = req.query.id;
+  addAccountListener(accountId);
+  res.json({ success: 1, status: "Account added " + accountId });
 });
 
 app.get('/accounts/remove',function(req,res) {
-  removeAccountListener(req.query.id);
-  res.json({ success: 1, status: "Account removed " . res.query.id });
+  accountId = req.query.id;
+  removeAccountListener(accountId);
+  res.json({ success: 1, status: "Account removed " + accountId });
 });
 
 app.get('/accounts',function(req,res) {
@@ -81,5 +83,5 @@ function addAccountListener(a) {
 function removeAccountListener(a) {
   console.log("Removing Stellar observer", a, "at", new Date());
   accountListeners[a]();
-  unset(accountListeners[a]);
+  delete(accountListeners[a]);
 }
