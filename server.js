@@ -106,7 +106,25 @@ function getMessageFilename(type, msgId) {
   return type + msgsDir + msgId;
 }
 
-function writeResponseFile(type, resp) {
+function getEventQueueIDs(type) {
+  var msgDir = type + msgsDir;
+  var files = fs.readdirSync(msgDir);
+  return files;
+}
+
+function getEventData(type, eventId) {
+  var msgFile = getMessageFilename(type, eventId);
+  var msg = JSON.parse(fs.readFileSync(msgFile, 'utf8'));
+  return msg;
+}
+
+function isEventSent(type, eventId) {
+  var eventDir = getEventDirectory(type, eventId);
+  var respFiles = glob.readdirSync(eventDir + eventId + '_200_*', {});
+  return (respFiles.length > 0);
+}
+
+function writeResponse(type, resp) {
   var eventDir = type + respDir + resp.event_id;
 
   console.log("Making Response Dir: " + eventDir);
@@ -120,13 +138,13 @@ function writeResponseFile(type, resp) {
   });
 }
 
-function deleteEventFile(type, evt) {
+function deleteEvent(type, evt) {
   var msgFile = getMessageFilename(type, evt.id);
   console.log("Deleting: " + msgFile);
   fs.unlink(msgFile, function (err) { return; });
 }
 
-function writeEventFile(type, evt) {
+function writeEvent(type, evt) {
   //console.log("Making Message Dir: " + msgsDir);
   var msgDir = type + msgsDir;
   mkdirp(msgDir, function(err) {
@@ -143,7 +161,7 @@ function writeEventFile(type, evt) {
 }
 
 // For the managed data URLs
-function writeAccountFile(a) {
+function writeAccount(a) {
   var acctFile = getAccountFilename(a);
   var cursor;
   if (fs.existsSync(acctFile)) {
@@ -177,22 +195,17 @@ function readEvents() {
   types = ['payments'];
   for (tidx in types) {
     var type = types[tidx];
-    var msgDir = type + msgsDir;
-    var files = fs.readdirSync(msgDir);
-    console.log("Reprocessing messages for type: " + type + ' - ' + files.length + ' messages');
-    for (fidx in files) {
+    var eventids = getEventQueueIDs(type);
+    console.log("Reprocessing messages for type: " + type + ' - ' + eventids.length + ' messages');
+    for (eidx in eventids) {
       keepAlive();
-      var msgFile = getMessageFilename(type, files[fidx]);
-      var idx = parseInt(fidx) + 1
-      console.log("Message: [" + idx + "/" + files.length + "] " + msgFile);
-      var msg = JSON.parse(fs.readFileSync(msgFile, 'utf8'));
-      var eventDir = getEventDirectory(type, msg.id);
-      console.log("eventDir. " + eventDir);
+      var msg = getEventData(type, eventids[eidx]);
+      var idx = parseInt(eidx) + 1
+      console.log("Event: [" + idx + "/" + eventids.length + "] " + eventids[eidx]);
       //Check backoff schedule here?
-      var respFiles = glob.readdirSync(eventDir + msg.id + '_200_*', {});
-      if (respFiles.length > 0) {
+      if (isEventSent(type, msg.id)) {
         console.log("Message already delivered. " + msg.id);
-        deleteEventFile(type, msg);
+        deleteEvent(type, msg);
       } else {
         console.log("Resubmitting failed event. " + msg.id);
         processEvent(type, msg);
@@ -225,11 +238,11 @@ function processEvent(type, message) {
             resp['error'] = error;
 
             console.log('set acct response:', JSON.stringify(resp));
-            writeResponseFile(type, resp);
+            writeResponse(type, resp);
 
             if (status_code == 200) {
               console.log("Message delivered. " + message.id);
-              deleteEventFile(type, message);
+              deleteEvent(type, message);
             }
             else if (status_code == 404) {
               console.log("404 request url: " + idKey);
@@ -239,7 +252,7 @@ function processEvent(type, message) {
 
 function addAccountListener(a) {
   console.log("Adding Stellar observer", a, "at", (new Date()).toJSON());
-  writeAccountFile(a);
+  writeAccount(a);
 
   accountListeners[a] = stellarServer.payments()
     .forAccount(a)
@@ -257,7 +270,7 @@ function addAccountListener(a) {
         if (!fs.existsSync(eventDir)) {
           console.log("Received new event: " + idKey + "\n" + message);
           console.log("message", message);
-          writeEventFile(type, message);
+          writeEvent(type, message);
           processEvent(type, message);
         }
       }
