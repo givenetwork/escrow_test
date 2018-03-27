@@ -125,9 +125,11 @@ function startListeners() {
   });
 }
 
-function getAccountDirectory(acctId) {
-  //var dataDir = 'data/' + a.split(/(....)/).filter(Boolean).join('/');
-  return dataDir + acctId + '/';
+function getAccountDirectory(acctId = null) {
+  //var acctDir = 'data/' + a.split(/(....)/).filter(Boolean).join('/');
+  var baseDir = dataDir;
+  if (acctId) { return baseDir + acctId + '/'; }
+  return baseDir;
 }
 
 function getAccountFilename(acctId) {
@@ -266,6 +268,7 @@ function writeEvent(acctId, type, evt) {
 
 const acct_fields = {
 
+  // Operations
   'eventhook:operation': ['source_account'],
   'eventhook:operation:create_account': ['funder','account'],
   'eventhook:operation:payment': ['from','to','asset_issuer'],
@@ -278,7 +281,9 @@ const acct_fields = {
   'eventhook:operation:merge_account': ['destination'],
   'eventhook:operation:manage_data': ['source_account'],
 
+  // Effects
   'eventhook:effect': ['source_account'],
+
   // Account Effects
   'eventhook:effect:account_created': ['account'], // 0
   'eventhook:effect:account_merged': ['account'], // 1
@@ -293,7 +298,7 @@ const acct_fields = {
   'eventhook:effect:signer_removed': ['account'],  // 11
   'eventhook:effect:signer_updated': ['account'],  // 12
 
-  //Ttrustline Effects
+  //Trustline Effects
   'eventhook:effect:trustline_created': ['account','asset_issuer'], // 20
   'eventhook:effect:trustline_removed': ['account','asset_issuer'], // 21
   'eventhook:effect:trustline_updated': ['account','asset_issuer'], // 22
@@ -311,6 +316,7 @@ const acct_fields = {
   'eventhook:effect:data_removed': ['account'], // 41
   'eventhook:effect:data_updated': ['account'], // 42
 
+  // Transactions
   'eventhook:transaction': ['source_account']
 }
 
@@ -325,22 +331,6 @@ function getAccountListFromEvent(evt) {
         msg_accounts.push(evt[ fields[fIdx] ]);
       }
     }
-  //if (t == 'create_account') {
-    //msg_accounts.push(evt.funder);
-    //msg_accounts.push(evt.account);
-  //} else if (t == 'payment') {
-    //msg_accounts.push(evt.asset_issuer);
-    //msg_accounts.push(evt.from);
-    //msg_accounts.push(evt.to);
-  //} else if (t == 'path_payment') {
-  //} else if (t == 'manage_offer') {
-  //} else if (t == 'create_passive_offer') {
-  //} else if (t == 'set_options') {
-  //} else if (t == 'change_trust') {
-  //} else if (t == 'allow_trust') {
-  //} else if (t == 'merge_account') {
-  //} else if (t == 'inflation') {
-  //} else if (t == 'manage_data') {
   }
   return msg_accounts;
 }
@@ -349,8 +339,8 @@ function queueEvent(evt) {
   var type = evt.type;
 
   var acctList = getAccountListFromEvent(evt);
-  for (iAcct in acctList) {
-    acctId = acctList[iAcct];
+  for (aIdx in acctList) {
+    acctId = acctList[aIdx];
     var aDir = getAccountDirectory(acctId);
     if (!fsExistsSync(aDir)) { continue; }
 
@@ -393,7 +383,25 @@ function writeAccount(a) {
 }
 
 function getActiveAccounts() {
-  return accounts;
+  var activeAccounts = [];
+  var acctDir = getAccountDirectory(null);
+  //console.log("Looking in dir: " + acctDir);
+  if (fsExistsSync( acctDir )) {
+    var acctIds = fs.readdirSync(acctDir);
+    //console.log("Found Accounts; Count: " + acctIds.length);
+    for (aIdx in acctIds) {
+      // For now, always add the account
+      activeAccounts.push(acctIds[aIdx]);
+      //console.log("Adding Active Account: " + acctIds[aIdx]);
+      
+      var acctFile = getAccountDirectory(acctIds[aIdx]) + '.credit.json';
+      if (fsExistsSync(acctFile)) {
+        // Load the account data
+        var acctCredits = JSON.parse(fs.readFileSync(acctFile, 'utf8'));
+      }
+    }
+  }
+  return activeAccounts;
 }
 
 function readEvents() {
@@ -434,16 +442,17 @@ function readEvents() {
 }
 
 function getAccountURLs(acct) {
-  //var acctList = getActiveAccounts();
-  var acctList = accountListeners;
+  var acctList = getActiveAccounts();
+  //var acctList = accountListeners;
   var acctFile = getAccountFilename(acct);
-  if (acct in acctList && fsExistsSync(acctFile)) {
+  if (acctList.indexOf(acct) > -1 && fsExistsSync(acctFile)) {
     // Load the account data
     var acctData = JSON.parse(fs.readFileSync(acctFile, 'utf8'));
 
     // Fetch the eventhook URLs from the account's data_attr
     var eventhooks = {}
     Object.keys(acctData['data_attr']).forEach(function(key) {
+      console.log("Testing key: " + key);
       if (key.startsWith('eventhook:')) {
         eventhooks[key] = decodeData(acctData['data_attr'][key], 'base64');
       }
@@ -485,6 +494,7 @@ function processEvent(message, acctId = null) {
 
 function postOperation(account, message) {
     var opTypes = ['', message.type];
+    var foundEventURL = false;
     for (opIdx in opTypes) {
       var opType = "eventhook:operation"
       if (opTypes[opIdx]) opType = opType + ':' + opTypes[opIdx];
@@ -496,10 +506,36 @@ function postOperation(account, message) {
       // Should use keyName as a glob "matchString" instead of an exact match?
       // Especially if we want to support multiple URLs for the same event type
       if (eventhooks && opType in eventhooks) { 
+        foundEventURL = true;
         postURL = eventhooks[opType];
-        postURL = postURL + "?id=" + message.id;
+        //postURL = postURL + "?id=" + message.id;
+
+        postBody = JSON.stringify({
+          'id': message.id, 
+          'network': {
+            'domain': 'stellar.org', 
+            'name':'TestNet', 
+            'id': 'GADDR'
+          }
+        })
+        kp = StellarSdk.Keypair.fromSecret('SBEREMKEHT6WDHHQVWAO62THX63AGSU2AIZLU6CXYUVJV3HKULNTCB34')
+        //signature = kp.sign(postURL).toString('hex')
+        signature = kp.sign(postBody).toString('hex')
         console.log("Calling URL: " + postURL);
-        request(postURL, function (error, response, body) {
+        console.log("Sender: " + kp.publicKey());
+        console.log("Body: " + JSON.stringify(postBody,null,2));
+        console.log("Signature: " + signature);
+        request(
+          {
+            headers: {
+              'X-Request-Sender-Id': kp.publicKey(),
+              'X-Request-Signature-ed25519-hex': signature,
+              'Content-Type': 'application/json'
+            },
+            method: 'POST',
+            uri: postURL,
+            body: postBody
+          }, function (error, response, body) {
             keepAlive();
             status_code = response && response.statusCode;
             console.log('error:', error);
@@ -526,9 +562,12 @@ function postOperation(account, message) {
             }
           });
       } else {
-        console.log("Account does not have service for event: " + message.type);
-        deleteAccountQueuedEvent(account, message);
+        console.log("Account does not have service for event: " + opType);
       }
+    }
+    if (!foundEventURL) {
+      console.log("Account has no handlers for operation: " + message.type);
+      deleteAccountQueuedEvent(account, message);
     }
 }
 
