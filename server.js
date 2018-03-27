@@ -517,18 +517,25 @@ function postOperation(account, message) {
             'name':'TestNet', 
             'id': 'GADDR'
           }
-        })
-        kp = StellarSdk.Keypair.fromSecret('SBEREMKEHT6WDHHQVWAO62THX63AGSU2AIZLU6CXYUVJV3HKULNTCB34')
-        //signature = kp.sign(postURL).toString('hex')
-        signature = kp.sign(postBody).toString('hex')
-        console.log("Calling URL: " + postURL);
-        console.log("Sender: " + kp.publicKey());
-        console.log("Body: " + JSON.stringify(postBody,null,2));
-        console.log("Signature: " + signature);
+        });
+
+        var public_key = "no signing key provided";
+        var signature = "no signing key provided";
+
+        if ('SIGNING_KEY' in process.env) {
+          kp = StellarSdk.Keypair.fromSecret(process.env.SIGNING_KEY);
+          public_key = kp.publicKey();
+          signature = kp.sign(postBody).toString('hex');
+        }
+
+        //console.log("Calling URL: " + postURL);
+        //console.log("Sender: " + public_key);
+        //console.log("Signature: " + signature);
+        //console.log("Body: " + postBody);
         request(
           {
             headers: {
-              'X-Request-Sender-Id': kp.publicKey(),
+              'X-Request-Sender-Id': public_key,
               'X-Request-Signature-ed25519-hex': signature,
               'Content-Type': 'application/json'
             },
