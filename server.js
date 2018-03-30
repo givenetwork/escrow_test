@@ -13,6 +13,10 @@ const sleep = require('system-sleep');
 const glob = require('glob-fs')({ builtins: false });
 
 const stellarServer = new StellarSdk.Server(process.env.STELLAR_SERVER_URL);
+const stellarNetworkDomain = process.env.STELLAR_DOMAIN;
+const stellarNetworkName = process.env.STELLAR_NETWORK_NAME;
+const stellarNetworkSeed = process.env.STELLAR_NETWORK_SEED;
+StellarSdk.Network.use(new StellarSdk.Network(stellarNetworkSeed));
 
 const posix = require('posix');
 try {
@@ -43,12 +47,21 @@ var dataDir = 'tracking_data/'
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+
+var agent_account_id = "no signing key provided";
+var agent_asset_code = 'NTFY';
+
+if ('AGENT_SIGNING_KEY' in process.env) {
+  var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+  agent_account_id = kp.publicKey();
+}
+
 //
 // Local Cache
 //
 var accountListeners = []
 const accounts = [
-  "GB25PA4Z5NF34WSL737ZE7VKBMBPNDJGJAAMHKYCDGYZ6QFPQLDIUJSF"
+  agent_account_id
 ]
 
 //
@@ -110,6 +123,7 @@ app.get('/responses',function(req,res) {
 });
 
 async function main() {
+  startAgentListener(agent_account_id);
   startListeners();
   setTimeout(readEvents, 5000);
   keepAlive();
@@ -120,7 +134,7 @@ async function main() {
 //
 
 function startListeners() {
-  _.forEach(accounts, function(a) {
+  _.forEach(getActiveClients(), function(a) {
         addAccountListener(a);
   });
 }
@@ -269,66 +283,69 @@ function writeEvent(acctId, type, evt) {
 const acct_fields = {
 
   // Operations
-  'eventhook:operation': ['source_account'],
-  'eventhook:operation:create_account': ['funder','account'],
-  'eventhook:operation:payment': ['from','to','asset_issuer'],
-  'eventhook:operation:path_payment': ['from','to','asset_issuer'],
-  'eventhook:operation:manage_offer': ['buy_asset_issuer','sell_asset_issuer'],
-  'eventhook:operation:create_passive_offer': ['buy_asset_issuer','sell_asset_issuer'],
-  'eventhook:operation:set_options': ['buy_asset_issuer','sell_asset_issuer'],
-  'eventhook:operation:change_trust': ['asset_issuer'],
-  'eventhook:operation:allow_trust': ['asset_issuer'],
-  'eventhook:operation:merge_account': ['destination'],
-  'eventhook:operation:manage_data': ['source_account'],
+  'operation': ['source_account'],
+  'operation:create_account': ['funder','account'],
+  'operation:payment': ['from','to','asset_issuer'],
+  'operation:path_payment': ['from','to','asset_issuer'],
+  'operation:manage_offer': ['buy_asset_issuer','sell_asset_issuer'],
+  'operation:create_passive_offer': ['buy_asset_issuer','sell_asset_issuer'],
+  'operation:set_options': ['buy_asset_issuer','sell_asset_issuer'],
+  'operation:change_trust': ['asset_issuer'],
+  'operation:allow_trust': ['asset_issuer'],
+  'operation:merge_account': ['destination'],
+  'operation:manage_data': ['source_account'],
 
   // Effects
-  'eventhook:effect': ['source_account'],
+  'effect': ['source_account'],
 
   // Account Effects
-  'eventhook:effect:account_created': ['account'], // 0
-  'eventhook:effect:account_merged': ['account'], // 1
-  'eventhook:effect:account_credited': ['account'], // 2
-  'eventhook:effect:account_debited': ['account'],  // 3
-  'eventhook:effect:thresholds_updated': ['account'],  // 4
-  'eventhook:effect:homedomain_updated': ['account'],  // 5
-  'eventhook:effect:flags_updated': ['account'],  // 6
+  'effect:account_created': ['account'], // 0
+  'effect:account_merged': ['account'], // 1
+  'effect:account_credited': ['account'], // 2
+  'effect:account_debited': ['account'],  // 3
+  'effect:thresholds_updated': ['account'],  // 4
+  'effect:homedomain_updated': ['account'],  // 5
+  'effect:flags_updated': ['account'],  // 6
 
   // Signer Effects
-  'eventhook:effect:signer_created': ['account'],  // 10
-  'eventhook:effect:signer_removed': ['account'],  // 11
-  'eventhook:effect:signer_updated': ['account'],  // 12
+  'effect:signer_created': ['account'],  // 10
+  'effect:signer_removed': ['account'],  // 11
+  'effect:signer_updated': ['account'],  // 12
 
   //Trustline Effects
-  'eventhook:effect:trustline_created': ['account','asset_issuer'], // 20
-  'eventhook:effect:trustline_removed': ['account','asset_issuer'], // 21
-  'eventhook:effect:trustline_updated': ['account','asset_issuer'], // 22
-  'eventhook:effect:trustline_authorized': ['account','asset_issuer'], // 23
-  'eventhook:effect:trustline_deauthorized': ['account','asset_issuer'], // 24
+  'effect:trustline_created': ['account','asset_issuer'], // 20
+  'effect:trustline_removed': ['account','asset_issuer'], // 21
+  'effect:trustline_updated': ['account','asset_issuer'], // 22
+  'effect:trustline_authorized': ['account','asset_issuer'], // 23
+  'effect:trustline_deauthorized': ['account','asset_issuer'], // 24
 
   // Trading Effects
-  'eventhook:effect:offer_created': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 30
-  'eventhook:effect:offer_removed': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 31
-  'eventhook:effect:offer_updated': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 32
-  'eventhook:effect:trade': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 33
+  'effect:offer_created': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 30
+  'effect:offer_removed': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 31
+  'effect:offer_updated': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 32
+  'effect:trade': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 33
 
   // Data Effects
-  'eventhook:effect:data_created': ['account'], // 40
-  'eventhook:effect:data_removed': ['account'], // 41
-  'eventhook:effect:data_updated': ['account'], // 42
+  'effect:data_created': ['account'], // 40
+  'effect:data_removed': ['account'], // 41
+  'effect:data_updated': ['account'], // 42
 
   // Transactions
-  'eventhook:transaction': ['source_account']
+  'transaction': ['source_account']
 }
 
 function getAccountListFromEvent(evt) {
   var msg_accounts = [evt.source_account];
-  t = 'eventhook:operation:' + evt.type; // t = evt.type;
+  t = 'operation:' + evt.type; // t = evt.type;
   for (op in acct_fields) {
-    opType = op; //op.replace('eventhook:','').replace('operation:','');
+    opType = op; //op.replace('operation:','');
     if (t == opType) {
       var fields = acct_fields[op];
       for (fIdx in fields) {
-        msg_accounts.push(evt[ fields[fIdx] ]);
+        if (fields[fIdx] in evt
+              && !msg_accounts.includes( evt[ fields[fIdx] ]) ) {
+          msg_accounts.push(evt[ fields[fIdx] ]);
+        }
       }
     }
   }
@@ -361,25 +378,45 @@ function queueEvent(evt) {
 }
 
 // For the managed data URLs
-function writeAccount(a) {
+async function writeAccount(a) {
 
   console.log("Loading Account: " + a);
-  stellarServer.loadAccount(a)
-    .then(function(account) {
-      var aDir = getAccountDirectory(a);
-      console.log("Making Dir: " + aDir);
-      mkdirp(aDir, function(err) {
-        if (err == null) { 
-          var acctFile = getAccountFilename(a);
-          json = JSON.stringify(account, null, 2);
-          console.log("Writing Account Data: " + json);
-          fs.writeFileSync(acctFile, json, 'utf8');
-        }
-      });
-    })
-    .catch(function(e) {
-      console.error(e);
-    });
+  try {
+    var acct = await stellarServer.loadAccount(a);
+
+    var acctDir = getAccountDirectory(a);
+    console.log("Making Dir: " + acctDir);
+    await mkdirp(acctDir);
+    var acctFile = getAccountFilename(a);
+    json = JSON.stringify(acct, null, 2);
+    console.log("Writing Account Data: " + json);
+    fs.writeFileSync(acctFile, json, 'utf8');
+
+    return acct;
+
+  } catch(e) {
+    console.error(e);
+    return null;
+  }
+}
+
+function getActiveClients() {
+  var activeAccounts = [];
+  var agentData = getAccount(agent_account_id);
+  var balances = agentData["balances"];
+  for (tlIdx in balances) {
+    tLine = balances[tlIdx];
+ 
+    if (tLine['asset_type'] == 'native'
+          || tLine['asset_code'] != agent_asset_code)
+    {
+      continue;
+    }
+    console.log("Adding Active Client: ", tLine);
+
+    activeAccounts.push(tLine['asset_issuer']);
+  }
+  return activeAccounts;
 }
 
 function getActiveAccounts() {
@@ -390,23 +427,24 @@ function getActiveAccounts() {
     var acctIds = fs.readdirSync(acctDir);
     //console.log("Found Accounts; Count: " + acctIds.length);
     for (aIdx in acctIds) {
-      // For now, always add the account
-      activeAccounts.push(acctIds[aIdx]);
-      //console.log("Adding Active Account: " + acctIds[aIdx]);
-      
-      var acctFile = getAccountDirectory(acctIds[aIdx]) + '.credit.json';
-      if (fsExistsSync(acctFile)) {
-        // Load the account data
-        var acctCredits = JSON.parse(fs.readFileSync(acctFile, 'utf8'));
+      //Check account is within the txn rate threshhold
+      var credit = getClientCredit(acctIds[aIdx]);
+
+      // For now just check that the credit balance > 0
+      if (credit['limit'] > 0) {
+        activeAccounts.push(acctIds[aIdx]);
+        //console.log("Adding Active Account: " + acctIds[aIdx]);
       }
     }
   }
   return activeAccounts;
 }
 
+// TODO: Rewrite this to track the sequence on each account; post them in order
 function readEvents() {
-  var acctList = getActiveAccounts();
-  //var acctList = accountListeners;
+  //var acctList = getActiveAccounts();
+  //var acctList = getActiveClients();
+  var acctList = Object.keys(accountListeners);
   for (aIdx in acctList) {
     var acctId = acctList[aIdx];
     console.log("Reprocessing messages for account: " + acctId);
@@ -441,32 +479,87 @@ function readEvents() {
   setTimeout(readEvents, 5000);
 }
 
-function getAccountURLs(acct) {
-  var acctList = getActiveAccounts();
-  //var acctList = accountListeners;
+function getAccount(acct) {
+  var acctData = null;
   var acctFile = getAccountFilename(acct);
-  if (acctList.indexOf(acct) > -1 && fsExistsSync(acctFile)) {
+  console.log("Loading Account File: " + acctFile);
+  if (fsExistsSync(acctFile)) {
     // Load the account data
-    var acctData = JSON.parse(fs.readFileSync(acctFile, 'utf8'));
+    acctData = JSON.parse(fs.readFileSync(acctFile, 'utf8'));
+  }
+  return acctData;
+}
 
+function getClientCredit(clientId) {
+  var agentData = getAccount(agent_account_id);
+  balances = agentData.balances;
+  for (tIdx in balances) {
+    tLine = balances[tIdx];
+    if (tLine['asset_code'] == agent_asset_code
+          && tLine['asset_issuer'] == clientId)
+    {
+      tLine['limit'] = parseFloat(tLine['limit']);
+      return tLine;
+    }
+  }
+  return {
+    'limit': 0, 
+    'balance': '0', 
+    'asset_code': agent_asset_code, 
+    'asset_issuer': clientId
+  };
+}
+
+async function updateClientCredit(tLine) {
+  var txnFee = 0.0000100; // should be txn fee from SDK (ledger lookup)
+
+  tLine['limit'] = tLine['limit'].toFixed(7);
+  console.log('Updating trustline: ', JSON.stringify(tLine, null, 2));
+
+  var clientAsset = new StellarSdk.Asset(tLine['asset_code'], tLine['asset_issuer']);
+
+  var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+  var agentAccount = await writeAccount(kp.publicKey());
+  var transaction = new StellarSdk.TransactionBuilder(agentAccount)
+      .addOperation(StellarSdk.Operation.changeTrust({
+          'asset': clientAsset,
+          'limit': tLine['limit']
+      }))
+      .build();
+
+  transaction.sign(kp);
+  try {
+    var transactionResult = await stellarServer.submitTransaction(transaction);
+    
+    console.log('Successfully updated trustline: ', JSON.stringify(tLine, null, 2));
+  } catch(err) {
+    console.log('An error has occured:');
+    console.log(JSON.stringify(err, null, 2));
+  }
+}
+
+function getAccountURLs(acct, hookType = '') {
+  var eventhooks = [];
+  // // hardcode the URL response for now
+  // var eventhooks = [process.env.WEBHOOK_URL];
+
+  // Load the account data
+  var acctData = getAccount(acct);
+  if (acctData) {
     // Fetch the eventhook URLs from the account's data_attr
-    var eventhooks = {}
     Object.keys(acctData['data_attr']).forEach(function(key) {
       console.log("Testing key: " + key);
-      if (key.startsWith('eventhook:')) {
-        eventhooks[key] = decodeData(acctData['data_attr'][key], 'base64');
+      if (key.startsWith('eventhook:' + hookType)) {
+        postURL = decodeData(acctData['data_attr'][key], 'base64');
+        if (!eventhooks.includes(postURL)) { eventhooks.push( postURL ); }
       }
     });
-    return eventhooks;
+  }
 
-    // // hardcode the URL response for now
-    // var eventhooks = {
-      // 'eventhook:operation:create_account': [process.env.WEBHOOK_URL],
-      // 'eventhook:operation:payment': [process.env.WEBHOOK_URL]
-    // }
-    // return eventhooks;
+  if (eventhooks.length > 0) {
+    return eventhooks;
   } else {
-    return {}
+    return null;
   }
 }
 
@@ -478,9 +571,11 @@ function processEvent(message, acctId = null) {
     msg_accounts = getAccountListFromEvent(message);
   }
 
+  //var activeAccounts = getActiveAccounts();
+  var activeAccounts = Object.keys(accountListeners);
   for (aIdx in msg_accounts) {
     var acctId = msg_accounts[aIdx];
-    if (acctId in accountListeners) {
+    if (activeAccounts.includes(acctId)) {
       postOperation(acctId, message);
     }
   }
@@ -493,98 +588,95 @@ function processEvent(message, acctId = null) {
 //account.on.payment(function(message) { /* Post payment event */ });
 
 function postOperation(account, message) {
-    var opTypes = ['', message.type];
-    var foundEventURL = false;
-    for (opIdx in opTypes) {
-      var opType = "eventhook:operation"
-      if (opTypes[opIdx]) opType = opType + ':' + opTypes[opIdx];
-      console.log("Examing account: ", account, " for event: ", opType);
+  var postTopic = "operation"
+  console.log("Examing account: ", account, " for eventhook: ", postTopic);
 
-      eventhooks = getAccountURLs(account);
-      console.log("Eventhooks: ", eventhooks);
+  var eventhooks = getAccountURLs(account, postTopic);
+  console.log("Eventhooks: ", eventhooks);
 
-      // Should use keyName as a glob "matchString" instead of an exact match?
-      // Especially if we want to support multiple URLs for the same event type
-      if (eventhooks && opType in eventhooks) { 
-        foundEventURL = true;
-        postURL = eventhooks[opType];
-        //postURL = postURL + "?id=" + message.id;
+  postBody = JSON.stringify({
+    'id': message.id, 
+    'topic': postTopic,
+    'type': message.type, 
+    'network': {
+      'domain': stellarNetworkDomain,
+      'name': stellarNetworkName,
+      'seed': stellarNetworkSeed,
+      'id': StellarSdk.Keypair.master().publicKey()
+    }
+  });
 
-        postBody = JSON.stringify({
-          'id': message.id, 
-          'network': {
-            'domain': 'stellar.org', 
-            'name':'TestNet', 
-            'id': 'GADDR'
-          }
-        });
+  var public_key = "no signing key provided";
+  var signature = "no signing key provided";
+  if ('AGENT_SIGNING_KEY' in process.env) {
+    var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+    public_key = kp.publicKey();
+    signature = kp.sign(postBody).toString('hex');
+  }
+  // Currrently results aren't tracked per enventhook URL;
+  // Any success will clear the event id
+  for (hIdx in eventhooks) {
+    postURL = eventhooks[hIdx];
 
-        var public_key = "no signing key provided";
-        var signature = "no signing key provided";
-
-        if ('SIGNING_KEY' in process.env) {
-          kp = StellarSdk.Keypair.fromSecret(process.env.SIGNING_KEY);
-          public_key = kp.publicKey();
-          signature = kp.sign(postBody).toString('hex');
-        }
-
-        //console.log("Calling URL: " + postURL);
-        //console.log("Sender: " + public_key);
-        //console.log("Signature: " + signature);
-        //console.log("Body: " + postBody);
-        request(
-          {
-            headers: {
-              'X-Request-Sender-Id': public_key,
-              'X-Request-Signature-ed25519-hex': signature,
-              'Content-Type': 'application/json'
-            },
-            method: 'POST',
-            uri: postURL,
-            body: postBody
-          }, function (error, response, body) {
-            keepAlive();
-            status_code = response && response.statusCode;
-            console.log('error:', error);
-            console.log('statusCode:', status_code);
-            //console.log('body:', body);
+    //console.log("Calling URL: " + postURL);
+    //console.log("Sender: " + public_key);
+    //console.log("Signature: " + signature);
+    //console.log("Body: " + postBody);
+    request(
+      {
+        headers: {
+          'X-Request-Sender-Id': public_key,
+          'X-Request-Signature-ed25519-hex': signature,
+          'X-Request-Topic': postTopic,
+          'X-Request-Type': message.type,
+          'Content-Type': 'application/json'
+        },
+        method: 'POST',
+        uri: postURL,
+        body: postBody
+      }, function (error, response, body) {
+        keepAlive();
+        status_code = response && response.statusCode;
+        console.log('error:', error);
+        console.log('statusCode:', status_code);
+        //console.log('body:', body);
  
-            resp = {}
-            resp['status_code'] = status_code
-            resp['id'] = message.id + '_' + status_code + '_' + (new Date()).toJSON();
-            resp['event_id'] = message.id;
-            resp['response'] = response;
-            resp['body'] = body;
-            resp['error'] = error;
+        resp = {}
+        resp['status_code'] = status_code
+        resp['id'] = message.id + '_' + status_code + '_' + (new Date()).toJSON();
+        resp['event_id'] = message.id;
+        resp['response'] = response;
+        resp['body'] = body;
+        resp['error'] = error;
 
-            //console.log('set acct response:', JSON.stringify(resp, null, 2));
-            writeResponse(account, message.type, resp);
+        //console.log('set acct response:', JSON.stringify(resp, null, 2));
+        writeResponse(account, message.type, resp);
 
-            if (status_code == 200) {
-              console.log("Event delivered. " + message.id);
-              deleteAccountQueuedEvent(account, message);
-            }
-            else if (status_code == 404) {
-              console.log("404 request url: " + idKey);
-            }
-          });
-      } else {
-        console.log("Account does not have service for event: " + opType);
-      }
-    }
-    if (!foundEventURL) {
-      console.log("Account has no handlers for operation: " + message.type);
-      deleteAccountQueuedEvent(account, message);
-    }
+        if (status_code == 200) {
+          console.log("Event delivered. " + message.id);
+          deleteAccountQueuedEvent(account, message);
+        }
+        else if (status_code == 404) {
+          console.log("404 request url: " + idKey);
+        }
+      });
+  }
+  if (!eventhooks) {
+    console.log("Account has no handlers for eventhook: " + postTopic);
+    deleteAccountQueuedEvent(account, message);
+  }
 }
 
-function addAccountListener(a) {
+async function addAccountListener(a) {
   console.log("Adding Stellar observer", a, "at", (new Date()).toJSON());
-  writeAccount(a);
+  // Make sure we have a directory and the custom URL data
+  var acct = await writeAccount(a);
+  if (!acct) { return; }
 
-  accountListeners[a] = stellarServer.payments()
+  accountListeners[a] = stellarServer.operations()
     .forAccount(a)
     //.cursor(acct['cursor'])
+    .cursor('now')
     .stream({
       onmessage: function (message) {
         keepAlive();
@@ -605,10 +697,165 @@ function addAccountListener(a) {
 }
 
 function removeAccountListener(a) {
-  console.log("Removing Stellar observer", a, "at", new Date());
+  console.log("Removing Stellar observer", a, "at", (new Date()).toJSON());
   accountListeners[a]();
   delete(accountListeners[a]);
   keepAlive();
+}
+
+var stopAgentListener = null;
+async function startAgentListener(agentId) {
+  console.log("Starting Agent Listener", agentId, "at", (new Date()).toJSON());
+  stopAgentListener = stellarServer.operations()
+    .forAccount(agentId)
+    .cursor('now')
+    .stream({
+      onmessage: async function (message) {
+        if (message.type == 'payment'
+              && message.to == agentId
+              && message.asset_type == 'native'
+              //&& message.asset_issuer == agentId
+              //&& message.asset_code == 'NTFY'
+        ) {
+          // Payments add to the credit amount for the account
+          // If account has no eventhook URLs, payment is refunded (less txnFee)
+          // If exactly 3x txnFee, refund the balance, deactivating the account
+
+          var txnFee = 0.0000100; // should be txn fee from SDK (ledger lookup)
+          var baseReserve = 0.5;  // should be reserve from SDK (ledger lookup)
+          var updateCredit = true;
+          
+          var fromId = message.from;
+          var xlmAmount = parseFloat(message.amount);
+          var sendRefund = false;
+
+          var acct = await writeAccount(fromId);
+          var credit = getClientCredit(fromId);
+          console.log("Account Credit: ", JSON.stringify(credit, null, 2));
+
+          // If Client has requested activation
+          if (credit['limit'] == 0) {
+            var eventhooks = getAccountURLs(fromId);
+            xlmAmount -= txnFee; // Taking trustline or refund payment txnFee
+
+            console.log("Eventhooks: ", eventhooks);
+            updateCredit = (eventhooks && xlmAmount > (txnFee + baseReserve))
+            if (updateCredit) {
+              console.log("Received XLM to activate Account.", xlmAmount);
+              credit['limit'] = xlmAmount;
+            } else {
+              console.log("Account not active and not enough XLM to activate.");
+              sendRefund = (xlmAmount > 0);
+              if (!sendRefund) {
+                console.log("Account sent too little XLM, no refund issued.");
+                xlmAmount = 0;
+	      }
+            } 
+
+          // If Client has requested deactivation and a refund
+          } else if (xlmAmount.toFixed(7) == (txnFee * 3).toFixed(7)) {
+            xlmAmount = parseFloat(credit['limit']); // Incoming xlmAmount not added to limit yet, can refund the whole existing balance
+            console.log("Received ", (txnFee*3).toFixed(7), " XLM. Refunding NTFY Credits: ", xlmAmount.toFixed(7));
+            credit['limit'] = 0;
+
+          // If Client did not send enough XLM
+          } else if (xlmAmount <= (txnFee * 2)) {
+            console.log("Account sent too little XLM.");
+            updateCredit = false;
+            xlmAmount -= txnFee; // Taking the refund payment txnFee
+            sendRefund = (xlmAmount > 0);
+            if (!sendRefund) {
+              console.log("Account sent too little XLM, no refund issued.");
+              xlmAmount = 0;
+	    }
+
+          // Else no activations, problems, or refunds; increase the credit line
+          } else {
+            credit['limit'] += xlmAmount;
+            console.log("Received payment of ", xlmAmount.toFixed(7), " XLM. Increasing NTFY Credits to: ", credit['limit'].toFixed(7));
+          }
+
+          // if agentId allowed to send XLM to itself; it's an infinite loop
+          var refundSent = sendRefund && (fromId == agentId);
+          if (fromId != agentId) {
+            var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+            var agentAccount = await writeAccount(kp.publicKey());
+
+            var transaction = new StellarSdk.TransactionBuilder(agentAccount);
+
+            if (sendRefund) {
+              console.log("Refunding XLM credits. XLM: ", xlmAmount.toFixed(7));
+              transaction = transaction.addOperation(
+                  StellarSdk.Operation.payment({
+                      'destination': fromId,
+                      'asset': StellarSdk.Asset.native(),
+                      'amount': xlmAmount.toFixed(7)
+                  })
+              );
+            }
+
+            // Add operations to update limit and refund trustline balances
+            var clientAsset = new StellarSdk.Asset(agent_asset_code, fromId);
+            if ('balance' in credit && parseFloat(credit['balance']) > 0) {
+              console.log("Refunding NTFY Asset balance: ", credit['balance']);
+              transaction = transaction.addOperation(
+                  StellarSdk.Operation.payment({
+                      'destination': fromId,
+                      'asset': clientAsset,
+                      'amount': credit['balance']
+                  })
+              );
+            }
+
+            if (updateCredit) {
+              console.log("Updating NTFY Credit: ", credit['limit'].toFixed(7));
+              var newLimit = '0';
+              if (credit['limit'] > 0) newLimit = credit['limit'].toFixed(7);
+              transaction = transaction.addOperation(
+                  StellarSdk.Operation.changeTrust({
+                      'asset': clientAsset, 'limit': newLimit
+                  })
+              );
+            }
+
+            transaction = transaction.build();
+            transaction.sign(kp);
+            try {
+              if (transaction.operations.length > 0) {
+                var transactionResult = await stellarServer.submitTransaction(transaction);
+                refundSent = sendRefund;
+                // Get updated stored state for the account
+                // TODO: Manage this straight on the accountListeners Object
+                await writeAccount(kp.publicKey());
+                console.log('Transaction Succesful: ', JSON.stringify(transactionResult, null, 2));
+              }
+            } catch(err) {
+              //console.log("Troublehoot: ", err);
+              console.log('Error on Transaction:');
+              console.log(JSON.stringify(err, null, 2));
+            }
+          }
+          if (refundSent) {
+            console.log('Successfully refunded XLM: ', xlmAmount.toFixed(7), " to ", fromId);
+            credit['limit'] -= xlmAmount;
+            if (credit['limit'] < 0) { credit['limit'] = 0; }
+          }
+
+          if (credit['limit'] > 0 && fromId in accountListeners) {
+            console.log("Already listenting for account.");
+          } else if (credit['limit'] > 0) {
+            addAccountListener(fromId);
+          } else if (fromId in accountListeners) {
+            removeAccountListener(fromId);
+          }
+
+          console.log("NEW CREDIT: ", JSON.stringify(credit, null, 2));
+        }
+      }
+      , onerror: function (e) {
+        console.error(e);
+      }
+    });
 }
 
 function decodeData(encString, encType) {
