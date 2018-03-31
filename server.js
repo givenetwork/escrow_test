@@ -96,11 +96,11 @@ app.get('/accounts',function(req,res) {
 //Perhaps repull them from the ledger instead of the FS (won't have status code)
 app.get('/events',function(req,res) {
   var acctId = req.query.account_id;
-  var opTypes = ['payment']
   var events = {}
-  for (tIdx in opTypes) {
-    var opType = opTypes[tIdx];
-    var eventIds = getAccountQueuedEventIDs(acctId, opType);
+  var eventhooks = getAccountURLs(acctId);
+  for (eIdx in eventhooks) {
+    var hookId = hashCode(eventhooks[eIdx]);
+    var eventIds = getAccountQueuedEventIDs(acctId, hookId);
     for (eIdx in eventIds) {
       var eventId = eventIds[eIdx];
 
@@ -108,8 +108,8 @@ app.get('/events',function(req,res) {
       if (!(eventId in events)) { events[eventId] = {}; }
       else { continue; }
 
-      events[eventId]['data'] = getEvent(acctId, opType, eventId);
-      events[eventId]['responses'] = getEventResponseIds(acctId, opType, eventId, '*');
+      events[eventId]['data'] = getEvent(acctId, hookId, eventId);
+      events[eventId]['responses'] = getEventResponseIds(acctId, hookId, eventId, '*');
     }
   }
   res.json(events);
@@ -151,28 +151,28 @@ function getAccountFilename(acctId) {
   //return getAccountDirectory(acctId) + acctId + '.json';
 }
 
-function getEventResponsesDirectory(acctId, type, eventId = null) {
-  var baseDir = getAccountDirectory(acctId) + type + responsesDir;
+function getEventResponsesDirectory(acctId, hookId, eventId = null) {
+  var baseDir = getAccountDirectory(acctId) + hookId + responsesDir;
   if (eventId) { return baseDir + eventId + '/'; }
   return baseDir;
 }
 
-function getEventFilename(acctId, type, eventId) {
-  eventDir = getEventResponsesDirectory(acctId, type, eventId);
+function getEventFilename(acctId, hookId, eventId) {
+  eventDir = getEventResponsesDirectory(acctId, hookId, eventId);
   return eventDir + '.data.json';
 }
 
-function getResponseFilename(acctId, type, responseId) {
+function getResponseFilename(acctId, hookId, responseId) {
   var eventId = responseId.split("_")[0]
-  return getEventResponsesDirectory(acctId, type, eventId) + responseId;
+  return getEventResponsesDirectory(acctId, hookId, eventId) + responseId;
 }
 
-function getAccountQueueDirectory(acctId, type) {
-  return getAccountDirectory(acctId) + type + eventsDir;
+function getAccountQueueDirectory(acctId, hookId) {
+  return getAccountDirectory(acctId) + hookId + eventsDir;
 }
 
-function getAccountQueuedEventIDs(acctId, type) {
-  var evtDir = getAccountQueueDirectory(acctId, type);
+function getAccountQueuedEventIDs(acctId, hookId) {
+  var evtDir = getAccountQueueDirectory(acctId, hookId);
   if (fsExistsSync(evtDir)) {
     var files = fs.readdirSync(evtDir);
     return files;
@@ -182,8 +182,8 @@ function getAccountQueuedEventIDs(acctId, type) {
   }
 }
 
-function getAccountEventIDs(acctId, type) {
-  var acctEventsDir = getEventResponsesDirectory(acctId, type);
+function getAccountEventIDs(acctId, hookId) {
+  var acctEventsDir = getEventResponsesDirectory(acctId, hookId);
   if (fsExistsSync(acctEventsDir)) {
     var eventids = fs.readdirSync(acctEventsDir);
     return eventids;
@@ -192,8 +192,8 @@ function getAccountEventIDs(acctId, type) {
   }
 }
 
-function getEvent(acctId, type, eventId) {
-  var eventFile = getEventFilename(acctId, type, eventId);
+function getEvent(acctId, hookId, eventId) {
+  var eventFile = getEventFilename(acctId, hookId, eventId);
   console.log("Loading Event File: ", eventFile);
   if (fsExistsSync(eventFile)) {
     return JSON.parse(fs.readFileSync(eventFile, 'utf8'));
@@ -202,8 +202,8 @@ function getEvent(acctId, type, eventId) {
   } 
 }
 
-function getEventResponseIds(acctId, type, eventId, matchstr) {
-  var respDir = getEventResponsesDirectory(acctId, type, eventId);
+function getEventResponseIds(acctId, hookId, eventId, matchstr) {
+  var respDir = getEventResponsesDirectory(acctId, hookId, eventId);
 
   // glob is merging with past results; reset this way due to weak JS-Fu
   var glob = require('glob-fs')({ builtins: false });
@@ -217,8 +217,8 @@ function getEventResponseIds(acctId, type, eventId, matchstr) {
   return respFiles;
 }
 
-function getResponse(acctId, type, responseId) {
-  var respFile = getResponseFilename(acctId, type, responseId);
+function getResponse(acctId, hookId, responseId) {
+  var respFile = getResponseFilename(acctId, hookId, responseId);
   if (fsExistsSync(respFile)) {
     return JSON.parse(fs.readFileSync(respFile, 'utf8'));
   } else {
@@ -227,13 +227,13 @@ function getResponse(acctId, type, responseId) {
 }
 
 
-function isEventSent(acctId, type, eventId) {
-  var respFiles = getEventResponseIds(acctId, type, eventId, '200_*');
+function isEventSent(acctId, hookId, eventId) {
+  var respFiles = getEventResponseIds(acctId, hookId, eventId, '200_*');
   return (respFiles.length > 0);
 }
 
-function writeResponse(acctId, type, resp) {
-  var respDir = getEventResponsesDirectory(acctId, type, resp.event_id);
+function writeResponse(acctId, hookId, resp) {
+  var respDir = getEventResponsesDirectory(acctId, hookId, resp.event_id);
 
   console.log("Making Response Dir: " + respDir);
   mkdirp(respDir, function(err) {
@@ -251,8 +251,8 @@ function writeResponse(acctId, type, resp) {
 
 // TODO: events must be tracked at the account level
 // the same event must be successfully deliverd for multiple accounts
-function deleteAccountQueuedEvent(acctId, evt) {
-  var eventFile = getAccountQueueDirectory(acctId, evt.type) + evt.id;
+function deleteAccountQueuedEvent(acctId, hookId, evt) {
+  var eventFile = getAccountQueueDirectory(acctId, hookId) + evt.id;
   console.log("Deleting: " + eventFile);
   fs.unlink(eventFile, function (err) { return; });
 }
@@ -266,12 +266,12 @@ function fsExistsSync(filePath) {
   }
 }
 
-function writeEvent(acctId, type, evt) {
-  respDir = getEventResponsesDirectory(acctId, type, evt.id);
+function writeEvent(acctId, hookId, evt) {
+  respDir = getEventResponsesDirectory(acctId, hookId, evt.id);
   console.log("Making Event Dir: " + respDir);
   mkdirp(respDir, function(err) {
     if (err == null) { 
-      var eventFile = getEventFilename(acctId, type, evt.id);
+      var eventFile = getEventFilename(acctId, hookId, evt.id);
       console.log("Writing event file: " + eventFile);
       var json = JSON.stringify(evt, null, 2);
       console.log(json);
@@ -352,28 +352,45 @@ function getAccountListFromEvent(evt) {
   return msg_accounts;
 }
 
-function queueEvent(evt) {
-  var type = evt.type;
+//String.prototype.hashCode = function() {
+function hashCode(str) {
+  var hash = 0, i, chr;
+  //if (this.length === 0) return hash;
+  //for (i = 0; i < this.length; i++) {
+    //chr   = this.charCodeAt(i);
+  if (str.length === 0) return hash;
+  for (i = 0; i < str.length; i++) {
+    chr   = str.charCodeAt(i);
+    hash  = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return (hash >>> 0).toString(16);
+};
 
+function queueEvent(evt) {
   var acctList = getAccountListFromEvent(evt);
   for (aIdx in acctList) {
     acctId = acctList[aIdx];
     var aDir = getAccountDirectory(acctId);
     if (!fsExistsSync(aDir)) { continue; }
 
-    writeEvent(acctId, type, evt);
+    var eventhooks = getAccountURLs(acctId);
+    for (eIdx in eventhooks) {
+      hookId = hashCode(eventhooks[eIdx]);
+      writeEvent(acctId, hookId, evt);
 
-    var eventDir = getAccountQueueDirectory(acctId, type);
-    mkdirp(eventDir, function(err) {
-      if (err == null) { 
-        var eventFile = eventDir + evt.id;
-        if (!fsExistsSync(eventFile)) {
-          console.log("Queueing event file: " + eventFile);
-          var json = JSON.stringify(evt, null, 2);
-          fs.writeFileSync(eventFile, json, 'utf8');
+      var eventDir = getAccountQueueDirectory(acctId, hookId);
+      mkdirp(eventDir, function(err) {
+        if (err == null) { 
+          var eventFile = eventDir + evt.id;
+          if (!fsExistsSync(eventFile)) {
+            console.log("Queueing event file: " + eventFile);
+            var json = JSON.stringify(evt, null, 2);
+            fs.writeFileSync(eventFile, json, 'utf8');
+          }
         }
-      }
-    });
+      });
+    }
   }
 }
 
@@ -448,22 +465,23 @@ function readEvents() {
   for (aIdx in acctList) {
     var acctId = acctList[aIdx];
     console.log("Reprocessing messages for account: " + acctId);
-    var opTypes = ['create_account','payment'];
-    for (tIdx in opTypes) {
-      var opType = opTypes[tIdx];
-      var eventIds = getAccountQueuedEventIDs(acctId, opType);
-      console.log("Reprocessing messages for type: " + opType + ' - ' + eventIds.length + ' messages');
+
+    var eventhooks = getAccountURLs(acctId);
+    for (eIdx in eventhooks) {
+      var hookId = hashCode(eventhooks[eIdx]);
+      var eventIds = getAccountQueuedEventIDs(acctId, hookId);
+      console.log("Reprocessing messages for URL: " + hookId + ' - ' + eventIds.length + ' messages');
       for (eIdx in eventIds) {
         keepAlive();
-        var evt = getEvent(acctId, opType, eventIds[eIdx]);
+        var evt = getEvent(acctId, hookId, eventIds[eIdx]);
         var idx = parseInt(eIdx) + 1
         console.log("Event ID [" + idx + "/" + eventIds.length + "]: " + eventIds[eIdx]);
         console.log("Event: " + '[not shown at this time]'); //JSON.stringify(evt, null, 2));
         //Check backoff schedule here?
         if (evt) {
-          if (isEventSent(acctId, opType, evt.id)) {
+          if (isEventSent(acctId, hookId, evt.id)) {
             console.log("Event already delivered: " + evt.id);
-            deleteAccountQueuedEvent(acctId, evt);
+            deleteAccountQueuedEvent(acctId, hookId, evt);
           } else {
             console.log("Resubmitting failed event: " + evt.id);
             processEvent(evt, acctId);
@@ -548,7 +566,7 @@ function getAccountURLs(acct, hookType = '') {
   if (acctData) {
     // Fetch the eventhook URLs from the account's data_attr
     Object.keys(acctData['data_attr']).forEach(function(key) {
-      console.log("Testing key: " + key);
+      //console.log("Testing key: " + key);
       if (key.startsWith('eventhook:' + hookType)) {
         postURL = decodeData(acctData['data_attr'][key], 'base64');
         if (!eventhooks.includes(postURL)) { eventhooks.push( postURL ); }
@@ -616,7 +634,8 @@ function postOperation(account, message) {
   // Currrently results aren't tracked per enventhook URL;
   // Any success will clear the event id
   for (hIdx in eventhooks) {
-    postURL = eventhooks[hIdx];
+    var postURL = eventhooks[hIdx];
+    var hookId = hashCode(postURL);
 
     //console.log("Calling URL: " + postURL);
     //console.log("Sender: " + public_key);
@@ -650,11 +669,11 @@ function postOperation(account, message) {
         resp['error'] = error;
 
         //console.log('set acct response:', JSON.stringify(resp, null, 2));
-        writeResponse(account, message.type, resp);
+        writeResponse(account, hookId, resp);
 
         if (status_code == 200) {
           console.log("Event delivered. " + message.id);
-          deleteAccountQueuedEvent(account, message);
+          deleteAccountQueuedEvent(account, hookId, message);
         }
         else if (status_code == 404) {
           console.log("404 request url: " + idKey);
@@ -663,7 +682,6 @@ function postOperation(account, message) {
   }
   if (!eventhooks) {
     console.log("Account has no handlers for eventhook: " + postTopic);
-    deleteAccountQueuedEvent(account, message);
   }
 }
 
@@ -685,13 +703,10 @@ async function addAccountListener(a) {
         console.log("OPID", idKey, " TXNID:", short_hash," paging_token", message.paging_token);
         //console.log("message", message);
 
-        var respDir = getEventResponsesDirectory(a, message.type, message.id);
-        if (!fsExistsSync(respDir)) {
-          console.log("Received new event: " + idKey);
-          console.log("message", message);
-          queueEvent(message);
-          processEvent(message);
-        }
+        console.log("Received new event: " + idKey);
+        console.log("message", message);
+        queueEvent(message);
+        processEvent(message);
       }
     });
 }
