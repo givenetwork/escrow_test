@@ -375,8 +375,8 @@ function queueEvent(evt) {
     if (!fsExistsSync(aDir)) { continue; }
 
     var eventhooks = getAccountURLs(acctId);
-    for (eIdx in eventhooks) {
-      hookId = hashCode(eventhooks[eIdx]);
+    for (hIdx in eventhooks) {
+      hookId = hashCode(eventhooks[hIdx]);
       writeEvent(acctId, hookId, evt);
 
       var eventDir = getAccountQueueDirectory(acctId, hookId);
@@ -457,7 +457,7 @@ function getActiveAccounts() {
   return activeAccounts;
 }
 
-// TODO: Rewrite this to track the sequence on each account; post them in order
+// TODO: Rewrite this to track the sequence on each hookURL; post them in order
 function readEvents() {
   //var acctList = getActiveAccounts();
   //var acctList = getActiveClients();
@@ -467,8 +467,9 @@ function readEvents() {
     console.log("Reprocessing messages for account: " + acctId);
 
     var eventhooks = getAccountURLs(acctId);
-    for (eIdx in eventhooks) {
-      var hookId = hashCode(eventhooks[eIdx]);
+    for (hIdx in eventhooks) {
+      var hookId = hashCode(eventhooks[hIdx]);
+      //TODO:Get next ID for "hookType" (txn, op, efkt)
       var eventIds = getAccountQueuedEventIDs(acctId, hookId);
       console.log("Reprocessing messages for URL: " + hookId + ' - ' + eventIds.length + ' messages');
       for (eIdx in eventIds) {
@@ -484,7 +485,7 @@ function readEvents() {
             deleteAccountQueuedEvent(acctId, hookId, evt);
           } else {
             console.log("Resubmitting failed event: " + evt.id);
-            processEvent(evt, acctId);
+            postOperation(acctId, eventhooks[hIdx], evt);
             keepAlive();
             sleep(2000); // 5 seconds
           }
@@ -581,41 +582,22 @@ function getAccountURLs(acct, hookType = '') {
   }
 }
 
-function processEvent(message, acctId = null) {
-  keepAlive();
-
-  var msg_accounts = [acctId];
-  if (acctId == null) {
-    msg_accounts = getAccountListFromEvent(message);
-  }
-
-  //var activeAccounts = getActiveAccounts();
-  var activeAccounts = Object.keys(accountListeners);
-  for (aIdx in msg_accounts) {
-    var acctId = msg_accounts[aIdx];
-    if (activeAccounts.includes(acctId)) {
-      postOperation(acctId, message);
-    }
-  }
-}
-
 // Should we do something like this? or an object with functions keyed by type?
 //account.on.transaction(function(message) { /* Post transaction event */ });
 //account.on.operation(function(message) { /* Post operation event */ });
 //account.on.effect(function(message) { /* Post effect event */ });
 //account.on.payment(function(message) { /* Post payment event */ });
 
-function postOperation(account, message) {
+function postOperation(account, postURL, message) {
   var postTopic = "operation"
-  console.log("Examing account: ", account, " for eventhook: ", postTopic);
 
-  var eventhooks = getAccountURLs(account, postTopic);
-  console.log("Eventhooks: ", eventhooks);
+  var hookId = hashCode(postURL);
+  console.log("Posting message to eventhook [", hookId, "]: ", postURL);
 
-  postBody = JSON.stringify({
-    'id': message.id, 
+  var postBody = JSON.stringify({
     'topic': postTopic,
     'type': message.type, 
+    'id': message.id, 
     'network': {
       'domain': stellarNetworkDomain,
       'name': stellarNetworkName,
@@ -631,58 +613,50 @@ function postOperation(account, message) {
     public_key = kp.publicKey();
     signature = kp.sign(postBody).toString('hex');
   }
-  // Currrently results aren't tracked per enventhook URL;
-  // Any success will clear the event id
-  for (hIdx in eventhooks) {
-    var postURL = eventhooks[hIdx];
-    var hookId = hashCode(postURL);
+
 
     //console.log("Calling URL: " + postURL);
     //console.log("Sender: " + public_key);
     //console.log("Signature: " + signature);
     //console.log("Body: " + postBody);
-    request(
-      {
-        headers: {
-          'X-Request-Sender-Id': public_key,
-          'X-Request-Signature-ed25519-hex': signature,
-          'X-Request-Topic': postTopic,
-          'X-Request-Type': message.type,
-          'Content-Type': 'application/json'
-        },
-        method: 'POST',
-        uri: postURL,
-        body: postBody
-      }, function (error, response, body) {
-        keepAlive();
-        status_code = response && response.statusCode;
-        console.log('error:', error);
-        console.log('statusCode:', status_code);
-        //console.log('body:', body);
+  request(
+    {
+      headers: {
+        'X-Request-Sender-Id': public_key,
+        'X-Request-Signature-ed25519-hex': signature,
+        'X-Request-Topic': postTopic,
+        'X-Request-Type': message.type,
+        'Content-Type': 'application/json'
+      },
+      method: 'POST',
+      uri: postURL,
+      body: postBody
+    }, function (error, response, body) {
+      keepAlive();
+      status_code = response && response.statusCode;
+      console.log('error:', error);
+      console.log('statusCode:', status_code);
+      //console.log('body:', body);
  
-        resp = {}
-        resp['status_code'] = status_code
-        resp['id'] = message.id + '_' + status_code + '_' + (new Date()).toJSON();
-        resp['event_id'] = message.id;
-        resp['response'] = response;
-        resp['body'] = body;
-        resp['error'] = error;
+      resp = {}
+      resp['status_code'] = status_code
+      resp['id'] = message.id + '_' + status_code + '_' + (new Date()).toJSON();
+      resp['event_id'] = message.id;
+      resp['response'] = response;
+      resp['body'] = body;
+      resp['error'] = error;
 
-        //console.log('set acct response:', JSON.stringify(resp, null, 2));
-        writeResponse(account, hookId, resp);
+      //console.log('set acct response:', JSON.stringify(resp, null, 2));
+      writeResponse(account, hookId, resp);
 
-        if (status_code == 200) {
-          console.log("Event delivered. " + message.id);
-          deleteAccountQueuedEvent(account, hookId, message);
-        }
-        else if (status_code == 404) {
-          console.log("404 request url: " + idKey);
-        }
-      });
-  }
-  if (!eventhooks) {
-    console.log("Account has no handlers for eventhook: " + postTopic);
-  }
+      if (status_code == 200) {
+        console.log("Event delivered. " + message.id);
+        deleteAccountQueuedEvent(account, hookId, message);
+      }
+      else if (status_code == 404) {
+        console.log("404 request url: " + idKey);
+      }
+  });
 }
 
 async function addAccountListener(a) {
@@ -706,7 +680,6 @@ async function addAccountListener(a) {
         console.log("Received new event: " + idKey);
         console.log("message", message);
         queueEvent(message);
-        processEvent(message);
       }
     });
 }
