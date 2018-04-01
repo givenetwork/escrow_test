@@ -125,7 +125,7 @@ app.get('/responses',function(req,res) {
 async function main() {
   startAgentListener(agent_account_id);
   startListeners();
-  setTimeout(readEvents, 5000);
+  //setTimeout(readEvents, 5000);
   keepAlive();
 }
 
@@ -135,6 +135,7 @@ async function main() {
 
 function startListeners() {
   _.forEach(getActiveClients(), function(a) {
+        setTimeout(function() { readEventCursors(a) }, 5000);
         addAccountListener(a);
   });
 }
@@ -283,68 +284,80 @@ function writeEvent(acctId, hookId, evt) {
 const acct_fields = {
 
   // Operations
-  'operation': ['source_account'],
-  'operation:create_account': ['funder','account'],
-  'operation:payment': ['from','to','asset_issuer'],
-  'operation:path_payment': ['from','to','asset_issuer'],
-  'operation:manage_offer': ['buy_asset_issuer','sell_asset_issuer'],
-  'operation:create_passive_offer': ['buy_asset_issuer','sell_asset_issuer'],
-  'operation:set_options': ['buy_asset_issuer','sell_asset_issuer'],
-  'operation:change_trust': ['asset_issuer'],
-  'operation:allow_trust': ['asset_issuer'],
-  'operation:merge_account': ['destination'],
-  'operation:manage_data': ['source_account'],
+  'operations': ['source_account'],
+
+  // All Operations
+  'operations:create_account': ['funder','account'],
+  'operations:payment': ['from','to','asset_issuer'],
+  'operations:path_payment': ['from','to','asset_issuer'],
+  'operations:manage_offer': ['buy_asset_issuer','sell_asset_issuer'],
+  'operations:create_passive_offer': ['buy_asset_issuer','sell_asset_issuer'],
+  'operations:set_options': ['buy_asset_issuer','sell_asset_issuer'],
+  'operations:change_trust': ['asset_issuer'],
+  'operations:allow_trust': ['asset_issuer'],
+  'operations:merge_account': ['destination'],
+  'operations:manage_data': ['source_account'],
+
+  // Payments
+  'payments': ['source_account'],
+  'payments:create_account': ['funder','account'],  // 0
+  'payments:payment': ['from','to','asset_issuer'], // 1
+
 
   // Effects
-  'effect': ['source_account'],
+  'effects': ['source_account'],
 
   // Account Effects
-  'effect:account_created': ['account'], // 0
-  'effect:account_merged': ['account'], // 1
-  'effect:account_credited': ['account'], // 2
-  'effect:account_debited': ['account'],  // 3
-  'effect:thresholds_updated': ['account'],  // 4
-  'effect:homedomain_updated': ['account'],  // 5
-  'effect:flags_updated': ['account'],  // 6
+  'effects:account_created': ['account'],     // 0
+  'effects:account_merged': ['account'],      // 1
+  'effects:account_credited': ['account'],    // 2
+  'effects:account_debited': ['account'],     // 3
+  'effects:thresholds_updated': ['account'],  // 4
+  'effects:homedomain_updated': ['account'],  // 5
+  'effects:flags_updated': ['account'],       // 6
 
   // Signer Effects
-  'effect:signer_created': ['account'],  // 10
-  'effect:signer_removed': ['account'],  // 11
-  'effect:signer_updated': ['account'],  // 12
+  'effects:signer_created': ['account'],  // 10
+  'effects:signer_removed': ['account'],  // 11
+  'effects:signer_updated': ['account'],  // 12
 
   //Trustline Effects
-  'effect:trustline_created': ['account','asset_issuer'], // 20
-  'effect:trustline_removed': ['account','asset_issuer'], // 21
-  'effect:trustline_updated': ['account','asset_issuer'], // 22
-  'effect:trustline_authorized': ['account','asset_issuer'], // 23
-  'effect:trustline_deauthorized': ['account','asset_issuer'], // 24
+  'effects:trustline_created': ['account','asset_issuer'],      // 20
+  'effects:trustline_removed': ['account','asset_issuer'],      // 21
+  'effects:trustline_updated': ['account','asset_issuer'],      // 22
+  'effects:trustline_authorized': ['account','asset_issuer'],   // 23
+  'effects:trustline_deauthorized': ['account','asset_issuer'], // 24
 
   // Trading Effects
-  'effect:offer_created': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 30
-  'effect:offer_removed': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 31
-  'effect:offer_updated': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 32
-  'effect:trade': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 33
+  'effects:offer_created': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 30
+  'effects:offer_removed': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 31
+  'effects:offer_updated': ['account','seller','sold_asset_issuer','bought_asset_issuer'], // 32
+  'effects:trade': ['account','seller','sold_asset_issuer','bought_asset_issuer'],         // 33
 
   // Data Effects
-  'effect:data_created': ['account'], // 40
-  'effect:data_removed': ['account'], // 41
-  'effect:data_updated': ['account'], // 42
+  'effects:data_created': ['account'], // 40
+  'effects:data_removed': ['account'], // 41
+  'effects:data_updated': ['account'], // 42
 
   // Transactions
-  'transaction': ['source_account']
+  'transactions': ['source_account']
 }
 
-function getAccountListFromEvent(evt) {
+function getAccountListFromEvent(evt, topic) {
+  // for all topics 'transctions', 'operations', 'payments', and 'effects'
   var msg_accounts = [evt.source_account];
-  t = 'operation:' + evt.type; // t = evt.type;
-  for (op in acct_fields) {
-    opType = op; //op.replace('operation:','');
-    if (t == opType) {
-      var fields = acct_fields[op];
+
+  // for topics that have a type: 'operations', 'payments', and 'effects'
+  if ( 'type' in evt ) {
+    var opType = topic + ':' + evt['type'];
+    if (opType in acct_fields) {
+      var fields = acct_fields[opType];
       for (fIdx in fields) {
-        if (fields[fIdx] in evt
-              && !msg_accounts.includes( evt[ fields[fIdx] ]) ) {
-          msg_accounts.push(evt[ fields[fIdx] ]);
+        if (fields[fIdx] in evt) {
+          var acctId = evt[ fields[fIdx] ];
+          if ( !msg_accounts.includes(acctId) ) {
+            msg_accounts.push(acctId);
+          }
         }
       }
     }
@@ -367,16 +380,16 @@ function hashCode(str) {
   return (hash >>> 0).toString(16);
 };
 
-function queueEvent(evt) {
-  var acctList = getAccountListFromEvent(evt);
+function queueEvent(evt, topic) {
+  var acctList = getAccountListFromEvent(evt, topic);
   for (aIdx in acctList) {
     acctId = acctList[aIdx];
     var aDir = getAccountDirectory(acctId);
     if (!fsExistsSync(aDir)) { continue; }
 
     var eventhooks = getAccountURLs(acctId);
-    for (hIdx in eventhooks) {
-      hookId = hashCode(eventhooks[hIdx]);
+    for (hookId in eventhooks) {
+      //TODO: make sure this works without the "topic" code
       writeEvent(acctId, hookId, evt);
 
       var eventDir = getAccountQueueDirectory(acctId, hookId);
@@ -415,6 +428,60 @@ async function writeAccount(a) {
     console.error(e);
     return null;
   }
+}
+
+// For the managed data URLs
+async function updateCursorData(acctId, cursorData) {
+  console.log("Updating Sequence Tracking for account: " + acctId);
+
+  var acctData = await writeAccount(acctId);
+  try {
+    var acctDir = getAccountDirectory(acctId);
+    // Make sure account directory exists
+    await mkdirp(acctDir);
+    var cursorFile = acctDir + '.cursors.json'
+
+    json = JSON.stringify(cursorData, null, 2);
+    console.log("Writing Cursor Data: " + json);
+    fs.writeFileSync(cursorFile, json, 'utf8');
+
+    return cursorData;
+
+  } catch(e) {
+    console.error(e);
+    return null;
+  }
+}
+
+function getCursorData(acctId) {
+  var acctDir = getAccountDirectory(acctId);
+  var cursorData = {};
+  var cursorFile = acctDir + '.cursors.json';
+  if (fsExistsSync(cursorFile)) {
+    cursorData = JSON.parse(fs.readFileSync(cursorFile, 'utf8'));
+  }
+
+  var eventhooks = getAccountURLs(acctId);
+  for (topic in eventhooks) {
+    if (!(topic in cursorData)) { cursorData[topic] = {}; }
+    for (hookId in eventhooks[topic]) {
+      if (!(hookId in cursorData[topic])) { cursorData[topic][hookId] = {}; }
+      cursorData[topic][hookId]['url'] = eventhooks[topic][hookId];
+    }
+  }
+  
+  for (topic in cursorData) {
+    if (topic in eventhooks) {
+      for (hookId in cursorData[topic]) {
+        if (!(hookId in eventhooks[topic])) {
+          delete(cursorData[topic][hookId]);
+        }
+      }
+    } else {
+      delete(cursorData[topic]);
+    }
+  }
+  return cursorData;
 }
 
 function getActiveClients() {
@@ -457,7 +524,84 @@ function getActiveAccounts() {
   return activeAccounts;
 }
 
-// TODO: Rewrite this to track the sequence on each hookURL; post them in order
+function getServerCall(topic) {
+  var serverCall = null;
+  if (topic == 'transactions') {
+    serverCall = stellarServer.transactions();
+  } else if (topic == 'operations') {
+    serverCall = stellarServer.operations();
+  } else if (topic == 'payments') {
+    serverCall = stellarServer.payments();
+  } else if (topic == 'effects') {
+    serverCall = stellarServer.effects();
+  }
+  return serverCall;
+}
+
+async function readEventCursors(acctId) {
+  console.log("Reading events for account: " + acctId);
+
+  //var cursorData = accountListeners[acctId]['cursors'];
+  var cursorData = getCursorData(acctId);
+  await updateCursorData(acctId, cursorData);
+  for (topic in cursorData) {
+    for (hookId in cursorData[topic]) {
+      var postURL = cursorData[topic][hookId]['url'];
+      var paging_token = cursorData[topic][hookId]['paging_token'];
+
+      var serverCall = getServerCall(topic);
+      if (!serverCall) { continue; }
+
+      if (!paging_token) {
+        console.log("No Paging Token: ", topic, "/", hookId);
+        var r = await serverCall
+          .forAccount(acctId)
+          .limit(1)
+          .order('desc')
+          .cursor('now')
+          .call();
+
+        console.log("Results: ", JSON.stringify(r, null, 2));
+        if (r.records.length > 0) {
+          var evt = r.records[0];
+          paging_token = evt['paging_token'];
+          cursorData[topic][hookId]['paging_token'] = paging_token;
+        }
+        serverCall = getServerCall(topic);
+      }
+
+      try {
+
+        console.error("Testing for Topic: ", topic, "; HookId: ", hookId, "; Paging_token: ", paging_token);
+        var r = await serverCall
+          .forAccount(acctId)
+          .limit(1)
+          .order('asc')
+          .cursor(paging_token)
+          .call();
+
+        if (r.records.length > 0) {
+          var evt = r.records[0];
+          console.log(JSON.stringify(evt, null, 2));
+
+          var statusCode = await postEvent(acctId, postURL, topic, evt);
+          if (statusCode == 200) {
+            cursorData[topic][hookId]['paging_token'] = evt['paging_token'];
+          }
+        }
+      } catch(err) {
+        console.error("An error happened while retrieving the event.");
+        console.error(JSON.stringify(err, null, 2));
+      }
+
+      // Wait for X time to honor the account's "postRate"
+    }
+    await updateCursorData(acctId, cursorData);
+  }
+  // Wait for X time to honor the account's "postRate"
+  setTimeout(function() { readEventCursors(acctId) }, 5000);
+}
+
 function readEvents() {
   //var acctList = getActiveAccounts();
   //var acctList = getActiveClients();
@@ -467,8 +611,7 @@ function readEvents() {
     console.log("Reprocessing messages for account: " + acctId);
 
     var eventhooks = getAccountURLs(acctId);
-    for (hIdx in eventhooks) {
-      var hookId = hashCode(eventhooks[hIdx]);
+    for (hookId in eventhooks) {
       //TODO:Get next ID for "hookType" (txn, op, efkt)
       var eventIds = getAccountQueuedEventIDs(acctId, hookId);
       console.log("Reprocessing messages for URL: " + hookId + ' - ' + eventIds.length + ' messages');
@@ -485,7 +628,7 @@ function readEvents() {
             deleteAccountQueuedEvent(acctId, hookId, evt);
           } else {
             console.log("Resubmitting failed event: " + evt.id);
-            postOperation(acctId, eventhooks[hIdx], evt);
+            postEvent(acctId, eventhooks[hIdx], "operations", evt);
             keepAlive();
             sleep(2000); // 5 seconds
           }
@@ -557,10 +700,8 @@ async function updateClientCredit(tLine) {
   }
 }
 
-function getAccountURLs(acct, hookType = '') {
-  var eventhooks = [];
-  // // hardcode the URL response for now
-  // var eventhooks = [process.env.WEBHOOK_URL];
+function getAccountURLs(acct) {
+  var eventhooks = {};
 
   // Load the account data
   var acctData = getAccount(acct);
@@ -568,14 +709,23 @@ function getAccountURLs(acct, hookType = '') {
     // Fetch the eventhook URLs from the account's data_attr
     Object.keys(acctData['data_attr']).forEach(function(key) {
       //console.log("Testing key: " + key);
-      if (key.startsWith('eventhook:' + hookType)) {
-        postURL = decodeData(acctData['data_attr'][key], 'base64');
-        if (!eventhooks.includes(postURL)) { eventhooks.push( postURL ); }
+      var agentDataPrefix = 'stellarwatch:';
+      if (key.startsWith(agentDataPrefix)) {
+        var postURL = decodeData(acctData['data_attr'][key], 'base64');
+        if (postURL) {
+          var hookId = hashCode(postURL);
+          var topic = key.toLowerCase().split(':')[1];
+
+          if (getServerCall(topic)) {
+            if (!(topic in eventhooks)) { eventhooks[topic] = {}; }
+            eventhooks[topic][hookId] = postURL;
+          }
+        }
       }
     });
   }
 
-  if (eventhooks.length > 0) {
+  if (Object.keys(eventhooks).length > 0) {
     return eventhooks;
   } else {
     return null;
@@ -583,16 +733,18 @@ function getAccountURLs(acct, hookType = '') {
 }
 
 // Should we do something like this? or an object with functions keyed by type?
-//account.on.transaction(function(message) { /* Post transaction event */ });
-//account.on.operation(function(message) { /* Post operation event */ });
-//account.on.effect(function(message) { /* Post effect event */ });
-//account.on.payment(function(message) { /* Post payment event */ });
+//account.on.transactions(function(message) { /* Post transaction event */ });
+//account.on.operations(function(message) { /* Post operation event */ });
+//account.on.effects(function(message) { /* Post effect event */ });
+//account.on.payments(function(message) { /* Post payment event */ });
 
-function postOperation(account, postURL, message) {
-  var postTopic = "operation"
-
+function postEvent(account, postURL, postTopic, message) {
   var hookId = hashCode(postURL);
   console.log("Posting message to eventhook [", hookId, "]: ", postURL);
+
+  if (!('type' in message)) {
+    message['type'] = '';
+  }
 
   var postBody = JSON.stringify({
     'topic': postTopic,
@@ -619,8 +771,8 @@ function postOperation(account, postURL, message) {
     //console.log("Sender: " + public_key);
     //console.log("Signature: " + signature);
     //console.log("Body: " + postBody);
-  request(
-    {
+  return new Promise(function(resolve, reject) {
+    request( {
       headers: {
         'X-Request-Sender-Id': public_key,
         'X-Request-Signature-ed25519-hex': signature,
@@ -631,17 +783,21 @@ function postOperation(account, postURL, message) {
       method: 'POST',
       uri: postURL,
       body: postBody
-    }, function (error, response, body) {
+    }, function(error, response, body) {
       keepAlive();
       status_code = response && response.statusCode;
-      console.log('error:', error);
-      console.log('statusCode:', status_code);
+      if (!status_code) {
+        status_code = -1;
+      }
+      //console.log('error:', error);
+      //console.log('statusCode:', status_code);
       //console.log('body:', body);
  
       resp = {}
       resp['status_code'] = status_code
       resp['id'] = message.id + '_' + status_code + '_' + (new Date()).toJSON();
       resp['event_id'] = message.id;
+      resp['topic'] = postTopic
       resp['response'] = response;
       resp['body'] = body;
       resp['error'] = error;
@@ -650,12 +806,14 @@ function postOperation(account, postURL, message) {
       writeResponse(account, hookId, resp);
 
       if (status_code == 200) {
-        console.log("Event delivered. " + message.id);
+        console.log("Event delivered. ", postTopic ,": ", message.id);
         deleteAccountQueuedEvent(account, hookId, message);
+        resolve(status_code);
+      } else {
+        console.log(status_code, " request url: " + postURL);
+        resolve(status_code);
       }
-      else if (status_code == 404) {
-        console.log("404 request url: " + idKey);
-      }
+    });
   });
 }
 
@@ -679,9 +837,12 @@ async function addAccountListener(a) {
 
         console.log("Received new event: " + idKey);
         console.log("message", message);
-        queueEvent(message);
+        queueEvent(message, "operations");
       }
     });
+
+  // For now, deactivate the listener
+  accountListeners[a]();
 }
 
 function removeAccountListener(a) {
