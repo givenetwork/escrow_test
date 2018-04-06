@@ -197,11 +197,11 @@ function getResponse(acctId, hookId, responseId) {
 function writeResponse(acctId, hookId, resp) {
   var respDir = getEventResponsesDirectory(acctId, hookId, resp.id);
 
-  console.log("Making Response Dir: " + respDir);
+  //console.log("Making Response Dir: " + respDir);
   mkdirpSync(respDir);
   var json = JSON.stringify(resp, null, 2);
   var respFile = respDir + resp.event_id;
-  console.log("Writing Data: " + '[not shown at this time]');
+  //console.log("Writing Response Data: " + '[not shown at this time]');
   //console.log(json);
   fs.writeFileSync(respFile, json, 'utf8');
 }
@@ -295,12 +295,12 @@ function hashCode(str) {
 // For the managed data URLs
 async function writeAccount(acctId) {
 
-  console.log("Loading Account: " + acctId);
+  //console.log("Loading Account: " + acctId);
   try {
     var acct = await stellarServer.loadAccount(acctId);
 
     var acctDir = getAccountDirectory(acctId);
-    console.log("Making Dir: " + acctDir);
+    //console.log("Making Dir: " + acctDir);
     mkdirpSync(acctDir);
     var acctFile = getAccountFilename(acctId);
     json = JSON.stringify(acct, null, 2);
@@ -312,7 +312,7 @@ async function writeAccount(acctId) {
     var eventhooks = getAccountURLs(acctId);
     for (topic in eventhooks) {
       for (hookId in eventhooks[topic]) {
-        console.log("Processing Event Hook: ", topic, " / ", hookId);
+        //console.log("Processing Event Hook: ", topic, " / ", hookId);
         var cursorData = getCursorData(acctId, topic, hookId);
         //console.log("Got cursorData: ", cursorData);
         if (!('url' in cursorData)) {
@@ -361,19 +361,14 @@ function getCursorFilename(acctId, topic, hookId) {
 
 // For the managed data URLs
 function updateCursorData(acctId, topic, hookId, cursorData) {
-  console.log("Updating Cursor for: ", topic, " / ", hookId, " / ",  acctId);
-  console.log(cursorData);
-  var json = JSON.stringify(cursorData, null, 2);
-  console.log(json);
+  //console.log("Updating Cursor for: ", topic, " / ", hookId, " / ",  acctId);
 
   try {
     var cursorFile = getCursorFilename(acctId, topic, hookId);
-    console.log("Got Cursor Filename: ", cursorFile);
+    //console.log("Got Cursor Filename: ", cursorFile);
 
     var json = JSON.stringify(cursorData, null, 2);
-    console.log("Writing Cursor Data: " + json);
-    console.log(cursorData);
-    console.log(json);
+    //console.log("Writing Cursor Data: " + json);
     fs.writeFileSync(cursorFile, json, 'utf8');
 
     return cursorData;
@@ -406,7 +401,7 @@ function getActiveClients() {
     {
       continue;
     }
-    console.log("Adding Active Client: ", tLine);
+    //console.log("Adding Active Client: ", tLine);
 
     activeAccounts.push(tLine['asset_issuer']);
   }
@@ -442,7 +437,7 @@ function getServerCall(topic) {
 var post_mark = new Date();
 async function processEvent(acctId, topic, hookId) {
   var now = new Date();
-  console.log("-------------------------------- Delay of: ", now - post_mark);
+  //console.log("-------------------------------- Delay of: ", now - post_mark);
   post_mark = now;
   var cursorData = getCursorData(acctId, topic, hookId);
   if (!cursorData['active']) { return; }
@@ -451,7 +446,7 @@ async function processEvent(acctId, topic, hookId) {
   var paging_token = cursorData['paging_token'];
 
   var paging_token_save = paging_token;
-  console.error("Testing for Topic: ", topic, "; HookId: ", hookId, "; Paging_token: ", paging_token);
+  //console.error("Testing for Topic: ", topic, "; HookId: ", hookId, "; Paging_token: ", paging_token);
   if (topic.startsWith('asset_')) {
     // Use GraphQL Endpoints
     try {
@@ -464,6 +459,7 @@ async function processEvent(acctId, topic, hookId) {
       }
       if (evt) {
         var resp = await postEvent(acctId, postURL, topic, evt);
+        //console.log("response: ", JSON.stringify(resp, null, 2));
         if (resp.statusCode == 200) {
           cursorData['paging_token'] = evt['paging_token'];
         }
@@ -484,11 +480,11 @@ async function processEvent(acctId, topic, hookId) {
     try {
 
       if (!paging_token) {
-        console.log("No Paging Token: ", topic, "/", hookId);
-        console.log("Trying to refresh Horizon Paging_Token.");
+        //console.log("No Paging Token: ", topic, "/", hookId);
+        //console.log("Trying to refresh Horizon Paging_Token.");
         var r = await serverCall
           .forAccount(acctId).limit(1).order('desc').cursor('now').call();
-        console.log("Returned.");
+        //console.log("Returned.");
 
         //console.log("Results: ", JSON.stringify(r, null, 2));
         if (r.records.length > 0) {
@@ -527,14 +523,14 @@ async function processEvent(acctId, topic, hookId) {
 }
 
 async function readEventCursors(acctId) {
-  console.log("Reading events for account: " + acctId);
+  //console.log("Reading events for account: " + acctId);
   if (!acctId in getActiveClients()) {
     console.log("Account deactivated; stopping event Reader: " + acctId);
     return;
   }
   var acctData = await writeAccount(acctId);
   var credit = getClientCredit(acctId);
-  console.log("Account Credit is: ", credit);
+  //console.log("Account Credit is: ", credit);
 
   var eventhooks = getAccountURLs(acctId);
   postDelay = 10000 * eventhooks.length;
@@ -563,7 +559,7 @@ async function readEventCursors(acctId) {
 function getAccount(acct) {
   var acctData = null;
   var acctFile = getAccountFilename(acct);
-  console.log("Loading Account File: " + acctFile);
+  //console.log("Loading Account File: " + acctFile);
   if (fsExistsSync(acctFile)) {
     // Load the account data
     acctData = JSON.parse(fs.readFileSync(acctFile, 'utf8'));
@@ -610,7 +606,7 @@ async function updateClientCredits() {
     }
 
     tLine['limit'] = (parseFloat(tLine['limit']) / phi).toFixed(7);
-    console.log('Updating trustline: ', JSON.stringify(tLine, null, 2));
+    //console.log('Updating trustline: ', JSON.stringify(tLine, null, 2));
 
     var clientAsset = new StellarSdk.Asset(tLine['asset_code'], tLine['asset_issuer']);
 
@@ -625,8 +621,7 @@ async function updateClientCredits() {
       try {
         var txnResult = await stellarServer.submitTransaction(txn);
 
-        console.log('Client credits updated: ',
-            JSON.stringify(txnResult, null, 2));
+        //console.log('Client credits updated: ', JSON.stringify(txnResult, null, 2));
       } catch(err) {
         console.log('An error has occured:');
         if (typeof(err) == 'object') {
@@ -688,8 +683,7 @@ function getAccountURLs(acct) {
 
 function postEvent(account, postURL, postTopic, message) {
   var hookId = hashCode(postURL);
-  console.log("Posting to eventhook [", hookId, "/", postTopic, "]: ", postURL);
-
+  console.log("Posting to eventhook [", hookId, "/", postTopic, "]: ", postURL); 
   if (!('type' in message)) {
     message['type'] = '';
   }
@@ -759,10 +753,10 @@ function postEvent(account, postURL, postTopic, message) {
       writeResponse(account, hookId, resp);
 
       if (status_code == 200) {
-        console.log("Event delivered. ", postTopic ,": ", message.id);
+        //console.log("Event delivered. ", postTopic ,": ", message.id);
         resolve( response.toJSON() );
       } else if (response) {
-        console.log(status_code, " request url: " + postURL);
+        //console.log(status_code, " request url: " + postURL);
         resolve( response.toJSON() );
       } else {
         resolve( {'status_code': status_code, 'error': error} );
@@ -823,7 +817,7 @@ function startAgentListener(agentId) {
     .cursor('now')
     .stream({
       onmessage: async function (message) {
-        console.log("Agent Account Event: ", JSON.stringify(message, null, 2));
+        //console.log("Agent Account Event: ", JSON.stringify(message, null, 2));
         if (message.type == 'payment'
               && message.to == agentId
               && message.asset_type == 'native'
@@ -844,7 +838,7 @@ function startAgentListener(agentId) {
 
           var acct = await writeAccount(fromId);
           var credit = getClientCredit(fromId);
-          console.log("Account Credit: ", JSON.stringify(credit, null, 2));
+          //console.log("Account Credit: ", JSON.stringify(credit, null, 2));
 
           // First confirm with each website that it accepts these POST events
           var eventhooks = getAccountURLs(fromId);
@@ -862,16 +856,16 @@ function startAgentListener(agentId) {
           if (credit['limit'] == 0) {
             xlmAmount -= txnFee; // Taking trustline or refund txnFee payment
 
-            console.log("Account Activated: ", notSpam);
+            //console.log("Account Activated: ", notSpam);
             updateCredit = (notSpam && xlmAmount > (txnFee + baseReserve));
             if (updateCredit) {
-              console.log("Received XLM to activate Account.", xlmAmount);
+              //console.log("Received XLM to activate Account.", xlmAmount);
               credit['limit'] = xlmAmount;
             } else {
-              console.log("Account not active or not enough XLM to activate.");
+              //console.log("Account not active or not enough XLM to activate.");
               sendRefund = (xlmAmount > 0);
               if (!sendRefund) {
-                console.log("Account sent too little XLM, no refund issued.");
+                //console.log("Account sent too little XLM, no refund issued.");
                 xlmAmount = 0;
 	      }
             }
@@ -880,17 +874,17 @@ function startAgentListener(agentId) {
           } else if (xlmAmount.toFixed(7) == (txnFee * 3).toFixed(7)) {
             updateCredit = true;
             xlmAmount = parseFloat(credit['limit']); // Incoming xlmAmount not added to limit yet, can refund the whole existing balance
-            console.log("Received ", (txnFee*3).toFixed(7), " XLM. Refunding ", agent_asset_code, " Credits: ", xlmAmount.toFixed(7));
+            //console.log("Received ", (txnFee*3).toFixed(7), " XLM. Refunding ", agent_asset_code, " Credits: ", xlmAmount.toFixed(7));
             credit['limit'] = 0;
 
           // If Client did not send enough XLM or account not activated
           } else if (xlmAmount <= (txnFee * 2) || !notSpam) {
             updateCredit = false;
-            console.log("Account sent too little XLM or account not active.");
+            //console.log("Account sent too little XLM or account not active.");
             xlmAmount -= txnFee; // Taking the refund txnFee payment
             sendRefund = (xlmAmount > 0);
             if (!sendRefund) {
-              console.log("Account sent too little XLM, no refund issued.");
+              //console.log("Account sent too little XLM, no refund issued.");
               xlmAmount = 0;
 	    }
 
@@ -898,7 +892,7 @@ function startAgentListener(agentId) {
           } else {
             updateCredit = true;
             credit['limit'] += xlmAmount;
-            console.log("Received payment of ", xlmAmount.toFixed(7), " XLM. Increasing ", agent_asset_code, " Credits to: ", credit['limit'].toFixed(7));
+            //console.log("Received payment of ", xlmAmount.toFixed(7), " XLM. Increasing ", agent_asset_code, " Credits to: ", credit['limit'].toFixed(7));
           }
 
           // if agentId allowed to send XLM to itself; it's an infinite loop
@@ -910,7 +904,7 @@ function startAgentListener(agentId) {
             var transaction = new StellarSdk.TransactionBuilder(agentAccount);
 
             if (sendRefund) {
-              console.log("Refunding XLM credits. XLM: ", xlmAmount.toFixed(7));
+              //console.log("Refunding XLM credits. XLM: ", xlmAmount.toFixed(7));
               transaction = transaction.addOperation(
                   StellarSdk.Operation.payment({
                       'destination': fromId,
@@ -923,7 +917,7 @@ function startAgentListener(agentId) {
             // Clear out any trustline balance that the account sent
             var clientAsset = new StellarSdk.Asset(agent_asset_code, fromId);
             if ('balance' in credit && parseFloat(credit['balance']) > 0) {
-              console.log("Returning ", agent_asset_code, " Asset balance: ", credit['balance']);
+              //console.log("Returning ", agent_asset_code, " Asset balance: ", credit['balance']);
               transaction = transaction.addOperation(
                   StellarSdk.Operation.payment({
                       'destination': fromId,
@@ -935,7 +929,7 @@ function startAgentListener(agentId) {
 
             // Update the agent's credit limit on the trustline for the account
             if (updateCredit) {
-              console.log("Updating ", agent_asset_code, " Credit: ", credit['limit'].toFixed(7));
+              //console.log("Updating ", agent_asset_code, " Credit: ", credit['limit'].toFixed(7));
               var newLimit = '0';
               if (credit['limit'] > 0) newLimit = credit['limit'].toFixed(7);
               transaction = transaction.addOperation(
@@ -954,29 +948,33 @@ function startAgentListener(agentId) {
                 // Get updated stored state for the account
                 // TODO: Manage this straight on the accountListeners Object
                 await writeAccount(kp.publicKey());
-                console.log('Transaction Succesful: ', JSON.stringify(transactionResult, null, 2));
+                //console.log('Transaction Succesful: ', JSON.stringify(transactionResult, null, 2));
               }
             } catch(err) {
               //console.log("Troublehoot: ", err);
               console.log('Error on Transaction:');
-              console.log(JSON.stringify(err, null, 2));
+              if (typeof(err) == 'object') {
+                console.log(JSON.stringify(err, null, 2));
+              } else {
+                console.log(err);
+              }
             }
           }
           if (refundSent) {
-            console.log('Successfully refunded XLM: ', xlmAmount.toFixed(7), " to ", fromId);
+            //console.log('Successfully refunded XLM: ', xlmAmount.toFixed(7), " to ", fromId);
             credit['limit'] -= xlmAmount;
             if (credit['limit'] < 0) { credit['limit'] = 0; }
           }
 
           if (credit['limit'] > 0 && fromId in accountListeners) {
-            console.log("Already listenting for account.");
+            //console.log("Already listenting for account.");
           } else if (credit['limit'] > 0) {
             startAccountListener(fromId);
           } else if (fromId in accountListeners) {
             removeAccountListener(fromId);
           }
 
-          console.log("NEW CREDIT: ", JSON.stringify(credit, null, 2));
+          //console.log("NEW CREDIT: ", JSON.stringify(credit, null, 2));
         }
       }
       , onerror: function (e) {
@@ -1038,7 +1036,7 @@ function getAssetOperations(acctId, paging_token = null) {
       },
       function(error, response, body) {
         if (!error) {
-          console.log('body: ', JSON.stringify(body));
+          //console.log('body: ', JSON.stringify(body));
           if ('data' in body && queryName in body['data']) {
             var data = body['data'][queryName];
             if (data['nodes'].length) {
