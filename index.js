@@ -8,7 +8,6 @@ const bodyParser = require("body-parser");
 const path = require('path');
 const StellarSdk = require('stellar-sdk');
 const fs = require('fs');
-const sleep = require('system-sleep');
 const glob = require('glob-fs')({ builtins: false });
 
 const stellarServer = new StellarSdk.Server(process.env.STELLAR_SERVER_URL);
@@ -852,6 +851,9 @@ function startAgentListener(agentId) {
           var notSpam = false;
           for (topic in eventhooks) {
             for (hookId in eventhooks[topic]) {
+              var cursorData = getCursorData(fromId, topic, hookId);
+              cursorData = await activatePostURL(cursorData, fromId, topic, hookId, true);
+              updateCursorData(fromId, topic, hookId, cursorData);
               notSpam = notSpam || cursorData['active'];
             }
           }
