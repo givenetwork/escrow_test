@@ -8,7 +8,6 @@ const bodyParser = require("body-parser");
 const path = require('path');
 const StellarSdk = require('stellar-sdk');
 const fs = require('fs');
-const mkdirp = require('mkdirp');
 const sleep = require('system-sleep');
 const glob = require('glob-fs')({ builtins: false });
 
@@ -49,7 +48,7 @@ app.use(bodyParser.json());
 
 
 var agent_account_id = "no signing key provided";
-var agent_asset_code = 'NTFY';
+var agent_asset_code = 'STELLARWATCH';
 
 if ('AGENT_SIGNING_KEY' in process.env) {
   var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
@@ -74,7 +73,7 @@ app.listen(process.env.API_PORT || 3000, function(){
 
 app.get('/accounts/add',function(req,res) {
   var accountId = req.query.account_id;
-  addAccountListener(accountId);
+  startAccountListener(accountId);
   res.json({ success: 1, status: "Account added " + accountId });
   keepAlive();
 });
@@ -91,37 +90,6 @@ app.get('/accounts',function(req,res) {
   keepAlive();
 });
 
-//Should rearrange events to have an "account" context too
-//People are likely to want to see events for "their" account(s)
-//Perhaps repull them from the ledger instead of the FS (won't have status code)
-app.get('/events',function(req,res) {
-  var acctId = req.query.account_id;
-  var events = {}
-  var eventhooks = getAccountURLs(acctId);
-  for (eIdx in eventhooks) {
-    var hookId = hashCode(eventhooks[eIdx]);
-    var eventIds = getAccountQueuedEventIDs(acctId, hookId);
-    for (eIdx in eventIds) {
-      var eventId = eventIds[eIdx];
-
-      // Make sure the eventid entry is built only once
-      if (!(eventId in events)) { events[eventId] = {}; }
-      else { continue; }
-
-      events[eventId]['data'] = getEvent(acctId, hookId, eventId);
-      events[eventId]['responses'] = getEventResponseIds(acctId, hookId, eventId, '*');
-    }
-  }
-  res.json(events);
-  keepAlive();
-});
-
-// TODO: how do you do this?
-app.get('/responses',function(req,res) {
-  var acctId = req.query.account_id;
-  // return event data and response file contents
-});
-
 async function main() {
   startAgentListener(agent_account_id);
   startListeners();
@@ -135,8 +103,7 @@ async function main() {
 
 function startListeners() {
   _.forEach(getActiveClients(), function(a) {
-        setTimeout(function() { readEventCursors(a) }, 5000);
-        addAccountListener(a);
+        startAccountListener(a);
   });
 }
 
@@ -193,23 +160,23 @@ function getAccountEventIDs(acctId, hookId) {
   }
 }
 
-function getEvent(acctId, hookId, eventId) {
-  var eventFile = getEventFilename(acctId, hookId, eventId);
-  console.log("Loading Event File: ", eventFile);
-  if (fsExistsSync(eventFile)) {
-    return JSON.parse(fs.readFileSync(eventFile, 'utf8'));
+function getEvent(acctId, hookId, msgId) {
+  var msgFile = getEventFilename(acctId, hookId, msgId);
+  console.log("Loading Event File: ", msgFile);
+  if (fsExistsSync(msgFile)) {
+    return JSON.parse(fs.readFileSync(msgFile, 'utf8'));
   } else {
     return null;
   } 
 }
 
-function getEventResponseIds(acctId, hookId, eventId, matchstr) {
+function getEventResponseIds(acctId, hookId, msgId, matchstr) {
   var respDir = getEventResponsesDirectory(acctId, hookId, eventId);
 
   // glob is merging with past results; reset this way due to weak JS-Fu
   var glob = require('glob-fs')({ builtins: false });
 
-  matchstr = respDir + eventId + '_' + matchstr;
+  matchstr = respDir + msgId + '_' + matchstr;
   var respFiles = glob.readdirSync(matchstr);
 
   respFiles.forEach(function(part, index, arr) {
@@ -227,35 +194,16 @@ function getResponse(acctId, hookId, responseId) {
   }
 }
 
-
-function isEventSent(acctId, hookId, eventId) {
-  var respFiles = getEventResponseIds(acctId, hookId, eventId, '200_*');
-  return (respFiles.length > 0);
-}
-
 function writeResponse(acctId, hookId, resp) {
-  var respDir = getEventResponsesDirectory(acctId, hookId, resp.event_id);
+  var respDir = getEventResponsesDirectory(acctId, hookId, resp.id);
 
   console.log("Making Response Dir: " + respDir);
-  mkdirp(respDir, function(err) {
-    if (err == null) { 
-      var json = JSON.stringify(resp, null, 2);
-      var respFile = respDir + resp.id;
-      console.log("Writing Data: " + '[not shown at this time]');
-      //console.log(json);
-      fs.writeFileSync(respFile, json, 'utf8');
-    } else {
-      console.log("Error making dir: " + err);
-    }
-  });
-}
-
-// TODO: events must be tracked at the account level
-// the same event must be successfully deliverd for multiple accounts
-function deleteAccountQueuedEvent(acctId, hookId, evt) {
-  var eventFile = getAccountQueueDirectory(acctId, hookId) + evt.id;
-  console.log("Deleting: " + eventFile);
-  fs.unlink(eventFile, function (err) { return; });
+  mkdirpSync(respDir);
+  var json = JSON.stringify(resp, null, 2);
+  var respFile = respDir + resp.event_id;
+  console.log("Writing Data: " + '[not shown at this time]');
+  //console.log(json);
+  fs.writeFileSync(respFile, json, 'utf8');
 }
 
 function fsExistsSync(filePath) {
@@ -265,20 +213,6 @@ function fsExistsSync(filePath) {
   } catch (e) {
     return false;
   }
-}
-
-function writeEvent(acctId, hookId, evt) {
-  respDir = getEventResponsesDirectory(acctId, hookId, evt.id);
-  console.log("Making Event Dir: " + respDir);
-  mkdirp(respDir, function(err) {
-    if (err == null) { 
-      var eventFile = getEventFilename(acctId, hookId, evt.id);
-      console.log("Writing event file: " + eventFile);
-      var json = JSON.stringify(evt, null, 2);
-      console.log(json);
-      fs.writeFileSync(eventFile, json, 'utf8');
-    }
-  });
 }
 
 const acct_fields = {
@@ -343,28 +277,6 @@ const acct_fields = {
   'transactions': ['source_account']
 }
 
-function getAccountListFromEvent(evt, topic) {
-  // for all topics 'transctions', 'operations', 'payments', and 'effects'
-  var msg_accounts = [evt.source_account];
-
-  // for topics that have a type: 'operations', 'payments', and 'effects'
-  if ( 'type' in evt ) {
-    var opType = topic + ':' + evt['type'];
-    if (opType in acct_fields) {
-      var fields = acct_fields[opType];
-      for (fIdx in fields) {
-        if (fields[fIdx] in evt) {
-          var acctId = evt[ fields[fIdx] ];
-          if ( !msg_accounts.includes(acctId) ) {
-            msg_accounts.push(acctId);
-          }
-        }
-      }
-    }
-  }
-  return msg_accounts;
-}
-
 //String.prototype.hashCode = function() {
 function hashCode(str) {
   var hash = 0, i, chr;
@@ -380,47 +292,40 @@ function hashCode(str) {
   return (hash >>> 0).toString(16);
 };
 
-function queueEvent(evt, topic) {
-  var acctList = getAccountListFromEvent(evt, topic);
-  for (aIdx in acctList) {
-    acctId = acctList[aIdx];
-    var aDir = getAccountDirectory(acctId);
-    if (!fsExistsSync(aDir)) { continue; }
-
-    var eventhooks = getAccountURLs(acctId);
-    for (hookId in eventhooks) {
-      //TODO: make sure this works without the "topic" code
-      writeEvent(acctId, hookId, evt);
-
-      var eventDir = getAccountQueueDirectory(acctId, hookId);
-      mkdirp(eventDir, function(err) {
-        if (err == null) { 
-          var eventFile = eventDir + evt.id;
-          if (!fsExistsSync(eventFile)) {
-            console.log("Queueing event file: " + eventFile);
-            var json = JSON.stringify(evt, null, 2);
-            fs.writeFileSync(eventFile, json, 'utf8');
-          }
-        }
-      });
-    }
-  }
-}
-
 // For the managed data URLs
-async function writeAccount(a) {
+async function writeAccount(acctId) {
 
-  console.log("Loading Account: " + a);
+  console.log("Loading Account: " + acctId);
   try {
-    var acct = await stellarServer.loadAccount(a);
+    var acct = await stellarServer.loadAccount(acctId);
 
-    var acctDir = getAccountDirectory(a);
+    var acctDir = getAccountDirectory(acctId);
     console.log("Making Dir: " + acctDir);
-    await mkdirp(acctDir);
-    var acctFile = getAccountFilename(a);
+    mkdirpSync(acctDir);
+    var acctFile = getAccountFilename(acctId);
     json = JSON.stringify(acct, null, 2);
-    console.log("Writing Account Data: " + json);
+    //console.log("Writing Account Data: " + json);
     fs.writeFileSync(acctFile, json, 'utf8');
+
+
+    // Clean up the CursorData
+    var eventhooks = getAccountURLs(acctId);
+    for (topic in eventhooks) {
+      for (hookId in eventhooks[topic]) {
+        console.log("Processing Event Hook: ", topic, " / ", hookId);
+        var cursorData = getCursorData(acctId, topic, hookId);
+        //console.log("Got cursorData: ", cursorData);
+        if (!('url' in cursorData)) {
+          cursorData['url'] = eventhooks[topic][hookId];
+          updateCursorData(acctId, topic, hookId, cursorData);
+        }
+        if (!('active' in cursorData)) {
+          cursorData = await activatePostURL(cursorData, acctId, topic, hookId, true);
+          //console.log("CursorData received: ", cursorData);
+          updateCursorData(acctId, topic, hookId, cursorData);
+        }
+      }
+    }
 
     return acct;
 
@@ -430,58 +335,63 @@ async function writeAccount(a) {
   }
 }
 
+function mkdirpSync(dir) {
+  if (fsExistsSync(dir)) {
+    return;
+  } else {
+    mkdirpSync(path.dirname(dir));
+    fs.mkdirSync(dir);
+  }
+}
+
+function getCursorDirectory(acctId, topic, hookId) {
+  var acctDir = getAccountDirectory(acctId);
+  var cursorDir = acctDir + hookId + '/cursors/' + topic + '/';
+  //console.log("CursorDir: ", cursorDir);
+  mkdirpSync(cursorDir);
+  return cursorDir;
+}
+
+function getCursorFilename(acctId, topic, hookId) {
+  var cursorDir = getCursorDirectory(acctId, topic, hookId);
+  var cursorFile = cursorDir + '.data.json';
+  //console.log("CursorFile: ", cursorFile);
+  return cursorFile;
+}
+
 // For the managed data URLs
-async function updateCursorData(acctId, cursorData) {
-  console.log("Updating Sequence Tracking for account: " + acctId);
+function updateCursorData(acctId, topic, hookId, cursorData) {
+  console.log("Updating Cursor for: ", topic, " / ", hookId, " / ",  acctId);
+  console.log(cursorData);
+  var json = JSON.stringify(cursorData, null, 2);
+  console.log(json);
 
-  var acctData = await writeAccount(acctId);
   try {
-    var acctDir = getAccountDirectory(acctId);
-    // Make sure account directory exists
-    await mkdirp(acctDir);
-    var cursorFile = acctDir + '.cursors.json'
+    var cursorFile = getCursorFilename(acctId, topic, hookId);
+    console.log("Got Cursor Filename: ", cursorFile);
 
-    json = JSON.stringify(cursorData, null, 2);
+    var json = JSON.stringify(cursorData, null, 2);
     console.log("Writing Cursor Data: " + json);
+    console.log(cursorData);
+    console.log(json);
     fs.writeFileSync(cursorFile, json, 'utf8');
 
     return cursorData;
 
   } catch(e) {
+    console.log("Error Updating Cursor Data: ");
     console.error(e);
     return null;
   }
 }
 
-function getCursorData(acctId) {
-  var acctDir = getAccountDirectory(acctId);
-  var cursorData = {};
-  var cursorFile = acctDir + '.cursors.json';
+function getCursorData(acctId, topic, hookId) {
+  var cursorFile = getCursorFilename(acctId, topic, hookId);
   if (fsExistsSync(cursorFile)) {
     cursorData = JSON.parse(fs.readFileSync(cursorFile, 'utf8'));
+    return cursorData;
   }
-
-  var eventhooks = getAccountURLs(acctId);
-  for (topic in eventhooks) {
-    if (!(topic in cursorData)) { cursorData[topic] = {}; }
-    for (hookId in eventhooks[topic]) {
-      if (!(hookId in cursorData[topic])) { cursorData[topic][hookId] = {}; }
-      cursorData[topic][hookId]['url'] = eventhooks[topic][hookId];
-    }
-  }
-  
-  for (topic in cursorData) {
-    if (topic in eventhooks) {
-      for (hookId in cursorData[topic]) {
-        if (!(hookId in eventhooks[topic])) {
-          delete(cursorData[topic][hookId]);
-        }
-      }
-    } else {
-      delete(cursorData[topic]);
-    }
-  }
-  return cursorData;
+  return {};
 }
 
 function getActiveClients() {
@@ -503,28 +413,7 @@ function getActiveClients() {
   return activeAccounts;
 }
 
-function getActiveAccounts() {
-  var activeAccounts = [];
-  var acctDir = getAccountDirectory(null);
-  //console.log("Looking in dir: " + acctDir);
-  if (fsExistsSync( acctDir )) {
-    var acctIds = fs.readdirSync(acctDir);
-    //console.log("Found Accounts; Count: " + acctIds.length);
-    for (aIdx in acctIds) {
-      //Check account is within the txn rate threshhold
-      var credit = getClientCredit(acctIds[aIdx]);
-
-      // For now just check that the credit balance > 0
-      if (credit['limit'] > 0) {
-        activeAccounts.push(acctIds[aIdx]);
-        //console.log("Adding Active Account: " + acctIds[aIdx]);
-      }
-    }
-  }
-  return activeAccounts;
-}
-
-function getServerCall(topic) {
+function getHorizonServerCall(topic) {
   var serverCall = null;
   if (topic == 'transactions') {
     serverCall = stellarServer.transactions();
@@ -538,107 +427,137 @@ function getServerCall(topic) {
   return serverCall;
 }
 
-async function readEventCursors(acctId) {
-  console.log("Reading events for account: " + acctId);
+function getGraphQLServerCall(topic) {
+  var serverCall = null;
+  if (topic == 'asset_operations') {
+    serverCall = stellarServer.effects();
+  }
+  return serverCall;
+}
 
-  //var cursorData = accountListeners[acctId]['cursors'];
-  var cursorData = getCursorData(acctId);
-  await updateCursorData(acctId, cursorData);
-  for (topic in cursorData) {
-    for (hookId in cursorData[topic]) {
-      var postURL = cursorData[topic][hookId]['url'];
-      var paging_token = cursorData[topic][hookId]['paging_token'];
+function getServerCall(topic) {
+  return getHorizonServerCall(topic);
+}
 
-      var serverCall = getServerCall(topic);
-      if (!serverCall) { continue; }
+var post_mark = new Date();
+async function processEvent(acctId, topic, hookId) {
+  var now = new Date();
+  console.log("-------------------------------- Delay of: ", now - post_mark);
+  post_mark = now;
+  var cursorData = getCursorData(acctId, topic, hookId);
+  if (!cursorData['active']) { return; }
+
+  var postURL = cursorData['url'];
+  var paging_token = cursorData['paging_token'];
+
+  var paging_token_save = paging_token;
+  console.error("Testing for Topic: ", topic, "; HookId: ", hookId, "; Paging_token: ", paging_token);
+  if (topic.startsWith('asset_')) {
+    // Use GraphQL Endpoints
+    try {
+      var graphql = null;
+      var req = null;
+      var evt = null;
+      if (topic.endsWith('_operations')) {
+        evt = await getAssetOperations(acctId, paging_token);
+        //console.log("Results: ", JSON.stringify(evt, null, 2));
+      }
+      if (evt) {
+        var resp = await postEvent(acctId, postURL, topic, evt);
+        if (resp.statusCode == 200) {
+          cursorData['paging_token'] = evt['paging_token'];
+        }
+      }
+
+    } catch(err) {
+      console.error("An error happened while retrieving the event.");
+      if (typeof(err) == 'object') {
+        console.error(JSON.stringify(err, null, 2));
+      } else {
+        console.error(JSON.stringify(err, null, 2));
+      }
+    }
+  } else {
+    // Use Horizon Endpoints
+    var serverCall = getServerCall(topic);
+
+    try {
 
       if (!paging_token) {
         console.log("No Paging Token: ", topic, "/", hookId);
+        console.log("Trying to refresh Horizon Paging_Token.");
         var r = await serverCall
-          .forAccount(acctId)
-          .limit(1)
-          .order('desc')
-          .cursor('now')
-          .call();
+          .forAccount(acctId).limit(1).order('desc').cursor('now').call();
+        console.log("Returned.");
 
-        console.log("Results: ", JSON.stringify(r, null, 2));
+        //console.log("Results: ", JSON.stringify(r, null, 2));
         if (r.records.length > 0) {
           var evt = r.records[0];
           paging_token = evt['paging_token'];
-          cursorData[topic][hookId]['paging_token'] = paging_token;
+          cursorData['paging_token'] = paging_token;
         }
         serverCall = getServerCall(topic);
       }
 
-      try {
+      var r = await serverCall
+        .forAccount(acctId).limit(1).order('asc').cursor(paging_token).call();
 
-        console.error("Testing for Topic: ", topic, "; HookId: ", hookId, "; Paging_token: ", paging_token);
-        var r = await serverCall
-          .forAccount(acctId)
-          .limit(1)
-          .order('asc')
-          .cursor(paging_token)
-          .call();
+      //console.log("Returned.");
+      if (r.records.length > 0) {
+        var evt = r.records[0];
+        //console.log(JSON.stringify(evt, null, 2));
 
-        if (r.records.length > 0) {
-          var evt = r.records[0];
-          console.log(JSON.stringify(evt, null, 2));
-
-          var statusCode = await postEvent(acctId, postURL, topic, evt);
-          if (statusCode == 200) {
-            cursorData[topic][hookId]['paging_token'] = evt['paging_token'];
-          }
+        var resp = await postEvent(acctId, postURL, topic, evt);
+        if (resp.statusCode == 200) {
+          cursorData['paging_token'] = evt['paging_token'];
         }
-      } catch(err) {
-        console.error("An error happened while retrieving the event.");
+      }
+    } catch(err) {
+      console.error("An error happened while retrieving the event.");
+      if (typeof(err) == 'object') {
+        console.error(JSON.stringify(err, null, 2));
+      } else {
         console.error(JSON.stringify(err, null, 2));
       }
-
-      // Wait for X time to honor the account's "postRate"
     }
-    await updateCursorData(acctId, cursorData);
   }
-  // Wait for X time to honor the account's "postRate"
-  setTimeout(function() { readEventCursors(acctId) }, 5000);
+  if (cursorData['paging_token'] != paging_token_save) {
+    updateCursorData(acctId, topic, hookId, cursorData);
+  }
 }
 
-function readEvents() {
-  //var acctList = getActiveAccounts();
-  //var acctList = getActiveClients();
-  var acctList = Object.keys(accountListeners);
-  for (aIdx in acctList) {
-    var acctId = acctList[aIdx];
-    console.log("Reprocessing messages for account: " + acctId);
+async function readEventCursors(acctId) {
+  console.log("Reading events for account: " + acctId);
+  if (!acctId in getActiveClients()) {
+    console.log("Account deactivated; stopping event Reader: " + acctId);
+    return;
+  }
+  var acctData = await writeAccount(acctId);
+  var credit = getClientCredit(acctId);
+  console.log("Account Credit is: ", credit);
 
-    var eventhooks = getAccountURLs(acctId);
-    for (hookId in eventhooks) {
-      //TODO:Get next ID for "hookType" (txn, op, efkt)
-      var eventIds = getAccountQueuedEventIDs(acctId, hookId);
-      console.log("Reprocessing messages for URL: " + hookId + ' - ' + eventIds.length + ' messages');
-      for (eIdx in eventIds) {
-        keepAlive();
-        var evt = getEvent(acctId, hookId, eventIds[eIdx]);
-        var idx = parseInt(eIdx) + 1
-        console.log("Event ID [" + idx + "/" + eventIds.length + "]: " + eventIds[eIdx]);
-        console.log("Event: " + '[not shown at this time]'); //JSON.stringify(evt, null, 2));
-        //Check backoff schedule here?
-        if (evt) {
-          if (isEventSent(acctId, hookId, evt.id)) {
-            console.log("Event already delivered: " + evt.id);
-            deleteAccountQueuedEvent(acctId, hookId, evt);
-          } else {
-            console.log("Resubmitting failed event: " + evt.id);
-            postEvent(acctId, eventhooks[hIdx], "operations", evt);
-            keepAlive();
-            sleep(2000); // 5 seconds
-          }
-        }
-      }
+  var eventhooks = getAccountURLs(acctId);
+  postDelay = 10000 * eventhooks.length;
+  if (credit['limit']) {
+    postDelay = parseInt(1000 / parseFloat(credit['limit']));
+  }
+  topicHooks = [];
+  for (topic in eventhooks) {
+    for (hookId in eventhooks[topic]) {
+      topicHooks.push([topic, hookId]);
     }
   }
-  // No KeepAlive() calls are made unless there are queued events to process
-  // This timeout is separate from that one and will not keep the progam alive
-  setTimeout(readEvents, 5000);
+  ysm.array.forEachTime(topicHooks,
+    async function (topicHook, index, arr) {
+      await processEvent(acctId, topicHook[0], topicHook[1]);
+    },
+    postDelay, // Wait for X time to honor the account's "postRate"
+    function() {
+      if (acctId in accountListeners) {
+        accountListeners[acctId]['timeout'] = setTimeout(function() { readEventCursors(acctId) }, postDelay);
+      }
+    }
+  );
 }
 
 function getAccount(acct) {
@@ -654,9 +573,9 @@ function getAccount(acct) {
 
 function getClientCredit(clientId) {
   var agentData = getAccount(agent_account_id);
-  balances = agentData.balances;
+  var balances = agentData.balances;
   for (tIdx in balances) {
-    tLine = balances[tIdx];
+    var tLine = balances[tIdx];
     if (tLine['asset_code'] == agent_asset_code
           && tLine['asset_issuer'] == clientId)
     {
@@ -672,31 +591,53 @@ function getClientCredit(clientId) {
   };
 }
 
-async function updateClientCredit(tLine) {
+async function updateClientCredits() {
   var txnFee = 0.0000100; // should be txn fee from SDK (ledger lookup)
-
-  tLine['limit'] = tLine['limit'].toFixed(7);
-  console.log('Updating trustline: ', JSON.stringify(tLine, null, 2));
-
-  var clientAsset = new StellarSdk.Asset(tLine['asset_code'], tLine['asset_issuer']);
+  var baseReserve = 0.5;  // should be reserve from SDK (ledger lookup)
+  const phi = 1.618033988749895
 
   var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
   var agentAccount = await writeAccount(kp.publicKey());
-  var transaction = new StellarSdk.TransactionBuilder(agentAccount)
-      .addOperation(StellarSdk.Operation.changeTrust({
+  var txn = new StellarSdk.TransactionBuilder(agentAccount);
+
+  var agentData = getAccount(agent_account_id);
+  var balances = agentData.balances;
+  for (tIdx in balances) {
+    var tLine = balances[tIdx];
+    if (tLine['asset_type'] == 'native' || 
+        tLine['asset_code'] != agent_asset_code) {
+      continue;
+    }
+  
+    tLine['limit'] = (parseFloat(tLine['limit']) / phi).toFixed(7);
+    console.log('Updating trustline: ', JSON.stringify(tLine, null, 2));
+
+    var clientAsset = new StellarSdk.Asset(tLine['asset_code'], tLine['asset_issuer']);
+
+    txn = txn.addOperation(StellarSdk.Operation.changeTrust({
           'asset': clientAsset,
           'limit': tLine['limit']
       }))
-      .build();
 
-  transaction.sign(kp);
-  try {
-    var transactionResult = await stellarServer.submitTransaction(transaction);
+    if ((tIdx > 0 && ((tIdx % 20) == 0) ) || (tIdx == (balances.length - 1)) ) {
+      txn.build();
+      txn.sign(kp);
+      try {
+        var txnResult = await stellarServer.submitTransaction(txn);
     
-    console.log('Successfully updated trustline: ', JSON.stringify(tLine, null, 2));
-  } catch(err) {
-    console.log('An error has occured:');
-    console.log(JSON.stringify(err, null, 2));
+        console.log('Client credits updated: ',
+            JSON.stringify(txnResult, null, 2));
+      } catch(err) {
+        console.log('An error has occured:');
+        if (typeof(err) == 'object') {
+          console.log(JSON.stringify(err, null, 2));
+        } else {
+          console.log(err);
+        }
+      }
+      // Reset the txn and start accumulating more operations
+      txn = new StellarSdk.TransactionBuilder(agentAccount);
+    }
   }
 }
 
@@ -709,15 +650,21 @@ function getAccountURLs(acct) {
     // Fetch the eventhook URLs from the account's data_attr
     Object.keys(acctData['data_attr']).forEach(function(key) {
       //console.log("Testing key: " + key);
-      var agentDataPrefix = 'stellarwatch:';
-      if (key.startsWith(agentDataPrefix)) {
+
+      // Use the agent_asset_code as the service identifier
+      var agentDataPrefix = agent_asset_code.toLowerCase() + ':';
+      if (key.toLowerCase().startsWith(agentDataPrefix)) {
         var postURL = decodeData(acctData['data_attr'][key], 'base64');
+        // if the URL is not empty
         if (postURL) {
           var hookId = hashCode(postURL);
           var topic = key.toLowerCase().split(':')[1];
 
-          if (getServerCall(topic)) {
+          // Test that topic requested is a valid topic
+          if (getServerCall(topic) || topic.startsWith('asset_')) {
+            // Add the topic dictionary if it's not already there
             if (!(topic in eventhooks)) { eventhooks[topic] = {}; }
+            // Lastly, set the URL for the topicHook
             eventhooks[topic][hookId] = postURL;
           }
         }
@@ -725,6 +672,7 @@ function getAccountURLs(acct) {
     });
   }
 
+  // If any topicHooks were added, return them else return null
   if (Object.keys(eventhooks).length > 0) {
     return eventhooks;
   } else {
@@ -740,23 +688,28 @@ function getAccountURLs(acct) {
 
 function postEvent(account, postURL, postTopic, message) {
   var hookId = hashCode(postURL);
-  console.log("Posting message to eventhook [", hookId, "]: ", postURL);
+  console.log("Posting to eventhook [", hookId, "/", postTopic, "]: ", postURL);
 
   if (!('type' in message)) {
     message['type'] = '';
   }
 
-  var postBody = JSON.stringify({
+  var postJSON = {
     'topic': postTopic,
     'type': message.type, 
     'id': message.id, 
+    'extras': message.extras,
     'network': {
       'domain': stellarNetworkDomain,
       'name': stellarNetworkName,
       'seed': stellarNetworkSeed,
       'id': StellarSdk.Keypair.master().publicKey()
     }
-  });
+  };
+  if (!('extras' in message)) {
+    postJSON['extras'] = message.extras;
+  }
+  postBody = JSON.stringify(postJSON);
 
   var public_key = "no signing key provided";
   var signature = "no signing key provided";
@@ -795,10 +748,10 @@ function postEvent(account, postURL, postTopic, message) {
  
       resp = {}
       resp['status_code'] = status_code
-      resp['id'] = message.id + '_' + status_code + '_' + (new Date()).toJSON();
-      resp['event_id'] = message.id;
+      resp['event_id'] = message.id +'_'+status_code+'_'+(new Date()).toJSON();
+      resp['id'] = message.id;
       resp['topic'] = postTopic
-      resp['response'] = response;
+      resp['response'] = response && response.toJSON();
       resp['body'] = body;
       resp['error'] = error;
 
@@ -807,64 +760,75 @@ function postEvent(account, postURL, postTopic, message) {
 
       if (status_code == 200) {
         console.log("Event delivered. ", postTopic ,": ", message.id);
-        deleteAccountQueuedEvent(account, hookId, message);
-        resolve(status_code);
-      } else {
+        resolve( response.toJSON() );
+      } else if (response) {
         console.log(status_code, " request url: " + postURL);
-        resolve(status_code);
+        resolve( response.toJSON() );
+      } else {
+        resolve( {'status_code': status_code, 'error': error} );
       }
     });
   });
 }
 
-async function addAccountListener(a) {
+async function startAccountListener(a) {
   console.log("Adding Stellar observer", a, "at", (new Date()).toJSON());
   // Make sure we have a directory and the custom URL data
   var acct = await writeAccount(a);
   if (!acct) { return; }
 
-  accountListeners[a] = stellarServer.operations()
-    .forAccount(a)
-    //.cursor(acct['cursor'])
-    .cursor('now')
-    .stream({
-      onmessage: function (message) {
-        keepAlive();
-        idKey = message.id
-        short_hash = message.transaction_hash.slice(0,3) + '..' + message.transaction_hash.slice(-4)
-        console.log("OPID", idKey, " TXNID:", short_hash," paging_token", message.paging_token);
-        //console.log("message", message);
-
-        console.log("Received new event: " + idKey);
-        console.log("message", message);
-        queueEvent(message, "operations");
-      }
-    });
-
-  // For now, deactivate the listener
-  accountListeners[a]();
+  accountListeners[a] = {};
+  // Set the timout for the cursor event
+  accountListeners[a]['timeout'] = setTimeout(function() { readEventCursors(a) }, 0);
 }
 
 function removeAccountListener(a) {
   console.log("Removing Stellar observer", a, "at", (new Date()).toJSON());
-  accountListeners[a]();
+  clearTimeout(accountListeners[a]);
+  //accountListeners[a]();
   delete(accountListeners[a]);
   keepAlive();
 }
 
+async function activatePostURL(cursorData, acctId, topic, hookId, activate) {
+  var postURL = cursorData['url'];
+  var postTopic = 'agent_events'; 
+  var evt = {
+    topic: postTopic,
+    type: topic,
+    id: acctId,
+    extras: { 'activate_account': activate }
+  }
+  console.log("Confirming Request for: ", topic, "; with: ", postURL);
+  cursorData['active'] = false;
+  var resp = await postEvent(acctId, postURL, postTopic, evt);
+  console.log("Confirm Activation Response: ", resp);
+  if (resp['statusCode'] == 200) {
+    var json = JSON.parse(resp['body']);
+    //console.log("Confirm Request Value: ", json['extras']);
+    if ('extras' in json && 'activate_account' in json['extras']) {
+      cursorData['active'] = activate && json['extras']['activate_account'];
+    }
+  }
+  console.log("Request to activate: ", topic, ": ", cursorData['active'], " for ", postURL);
+
+  return cursorData;
+}
+
 var stopAgentListener = null;
-async function startAgentListener(agentId) {
+function startAgentListener(agentId) {
   console.log("Starting Agent Listener", agentId, "at", (new Date()).toJSON());
   stopAgentListener = stellarServer.operations()
     .forAccount(agentId)
     .cursor('now')
     .stream({
       onmessage: async function (message) {
+        console.log("Agent Account Event: ", JSON.stringify(message, null, 2));
         if (message.type == 'payment'
               && message.to == agentId
               && message.asset_type == 'native'
               //&& message.asset_issuer == agentId
-              //&& message.asset_code == 'NTFY'
+              //&& message.asset_code == agent_asset_code
         ) {
           // Payments add to the credit amount for the account
           // If account has no eventhook URLs, payment is refunded (less txnFee)
@@ -872,7 +836,7 @@ async function startAgentListener(agentId) {
 
           var txnFee = 0.0000100; // should be txn fee from SDK (ledger lookup)
           var baseReserve = 0.5;  // should be reserve from SDK (ledger lookup)
-          var updateCredit = true;
+          var updateCredit = false;
           
           var fromId = message.from;
           var xlmAmount = parseFloat(message.amount);
@@ -882,18 +846,26 @@ async function startAgentListener(agentId) {
           var credit = getClientCredit(fromId);
           console.log("Account Credit: ", JSON.stringify(credit, null, 2));
 
+          // First confirm with each website that it accepts these POST events
+          var eventhooks = getAccountURLs(fromId);
+          var notSpam = false;
+          for (topic in eventhooks) {
+            for (hookId in eventhooks[topic]) {
+              notSpam = notSpam || cursorData['active'];
+            }
+          }
+
           // If Client has requested activation
           if (credit['limit'] == 0) {
-            var eventhooks = getAccountURLs(fromId);
-            xlmAmount -= txnFee; // Taking trustline or refund payment txnFee
+            xlmAmount -= txnFee; // Taking trustline or refund txnFee payment
 
-            console.log("Eventhooks: ", eventhooks);
-            updateCredit = (eventhooks && xlmAmount > (txnFee + baseReserve))
+            console.log("Account Activated: ", notSpam);
+            updateCredit = (notSpam && xlmAmount > (txnFee + baseReserve));
             if (updateCredit) {
               console.log("Received XLM to activate Account.", xlmAmount);
               credit['limit'] = xlmAmount;
             } else {
-              console.log("Account not active and not enough XLM to activate.");
+              console.log("Account not active or not enough XLM to activate.");
               sendRefund = (xlmAmount > 0);
               if (!sendRefund) {
                 console.log("Account sent too little XLM, no refund issued.");
@@ -903,15 +875,16 @@ async function startAgentListener(agentId) {
 
           // If Client has requested deactivation and a refund
           } else if (xlmAmount.toFixed(7) == (txnFee * 3).toFixed(7)) {
+            updateCredit = true;
             xlmAmount = parseFloat(credit['limit']); // Incoming xlmAmount not added to limit yet, can refund the whole existing balance
-            console.log("Received ", (txnFee*3).toFixed(7), " XLM. Refunding NTFY Credits: ", xlmAmount.toFixed(7));
+            console.log("Received ", (txnFee*3).toFixed(7), " XLM. Refunding ", agent_asset_code, " Credits: ", xlmAmount.toFixed(7));
             credit['limit'] = 0;
 
-          // If Client did not send enough XLM
-          } else if (xlmAmount <= (txnFee * 2)) {
-            console.log("Account sent too little XLM.");
+          // If Client did not send enough XLM or account not activated
+          } else if (xlmAmount <= (txnFee * 2) || !notSpam) {
             updateCredit = false;
-            xlmAmount -= txnFee; // Taking the refund payment txnFee
+            console.log("Account sent too little XLM or account not active.");
+            xlmAmount -= txnFee; // Taking the refund txnFee payment
             sendRefund = (xlmAmount > 0);
             if (!sendRefund) {
               console.log("Account sent too little XLM, no refund issued.");
@@ -920,8 +893,9 @@ async function startAgentListener(agentId) {
 
           // Else no activations, problems, or refunds; increase the credit line
           } else {
+            updateCredit = true;
             credit['limit'] += xlmAmount;
-            console.log("Received payment of ", xlmAmount.toFixed(7), " XLM. Increasing NTFY Credits to: ", credit['limit'].toFixed(7));
+            console.log("Received payment of ", xlmAmount.toFixed(7), " XLM. Increasing ", agent_asset_code, " Credits to: ", credit['limit'].toFixed(7));
           }
 
           // if agentId allowed to send XLM to itself; it's an infinite loop
@@ -943,10 +917,10 @@ async function startAgentListener(agentId) {
               );
             }
 
-            // Add operations to update limit and refund trustline balances
+            // Clear out any trustline balance that the account sent
             var clientAsset = new StellarSdk.Asset(agent_asset_code, fromId);
             if ('balance' in credit && parseFloat(credit['balance']) > 0) {
-              console.log("Refunding NTFY Asset balance: ", credit['balance']);
+              console.log("Returning ", agent_asset_code, " Asset balance: ", credit['balance']);
               transaction = transaction.addOperation(
                   StellarSdk.Operation.payment({
                       'destination': fromId,
@@ -956,8 +930,9 @@ async function startAgentListener(agentId) {
               );
             }
 
+            // Update the agent's credit limit on the trustline for the account
             if (updateCredit) {
-              console.log("Updating NTFY Credit: ", credit['limit'].toFixed(7));
+              console.log("Updating ", agent_asset_code, " Credit: ", credit['limit'].toFixed(7));
               var newLimit = '0';
               if (credit['limit'] > 0) newLimit = credit['limit'].toFixed(7);
               transaction = transaction.addOperation(
@@ -993,7 +968,7 @@ async function startAgentListener(agentId) {
           if (credit['limit'] > 0 && fromId in accountListeners) {
             console.log("Already listenting for account.");
           } else if (credit['limit'] > 0) {
-            addAccountListener(fromId);
+            startAccountListener(fromId);
           } else if (fromId in accountListeners) {
             removeAccountListener(fromId);
           }
@@ -1004,7 +979,8 @@ async function startAgentListener(agentId) {
       , onerror: function (e) {
         console.error(e);
       }
-    });
+    }
+  );
 }
 
 function decodeData(encString, encType) {
@@ -1017,4 +993,108 @@ function decodeData(encString, encType) {
     buf = new Buffer(encString, encType).toString('ascii'); // Ta-da
   }
   return buf;
+}
+
+const gqlURL = 'https://mike-horizon-test.gly.sh/graphql';
+function getAssetOperations(acctId, paging_token = null) {
+  if (!paging_token) { paging_token = 0; }
+  var queryName = 'allHistoryOperations';
+
+  graphql = '' +
+'query iOps {' +
+'   ' + queryName + '(' +
+'    orderBy: [ID_ASC],' +
+'    filter:{' +
+'      or: [' +
+'        {details: {contains:{asset_issuer: "' + acctId + '"}}},' +
+'        {details: {contains:{sell_asset_issuer: "' + acctId + '"}}},' +
+'        {details: {contains:{buy_asset_issuer: "' + acctId + '"}}}' +
+'      ]' +
+'      rowId: {greaterThan:"' + paging_token + '"},' +
+'    }';
+  if (!paging_token) {
+    graphql += '    last: 1,';
+  } else {
+    graphql += '    first: 1,';
+  }
+  graphql += 
+'  ), ' +
+'  { nodes { rowId, type } } ' +
+'}';
+
+  var queryJson = {"query": graphql};
+  return new Promise(function(resolve, reject) {
+    request(
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        method: 'POST',
+        uri: gqlURL,
+        json: queryJson
+      },
+      function(error, response, body) {
+        if (!error) {
+          console.log('body: ', JSON.stringify(body));
+          if ('data' in body && queryName in body['data']) {
+            var data = body['data'][queryName];
+            if (data['nodes'].length) {
+              var idx = data['nodes'].length - 1;
+              var evt = {}; //data['nodes'][idx]['details'];
+              evt['paging_token'] = data['nodes'][idx]['rowId'];
+              evt['id'] = data['nodes'][idx]['rowId'];
+              evt['type'] = data['nodes'][idx]['type'];
+              resolve(evt);
+            } else {
+              resolve(null);
+            }
+          }
+        } else {
+          reject(error);
+        }
+      }
+    );
+  });
+}
+
+/* ysm.array.js; Yan Morin <progysm@gmail.com>; 2014-12-09 */
+var ysm = {};
+ysm.array = {};
+
+/**
+ * Run a function for each item inside an array, using a timeout
+ * @param Array arr
+ * @param Function callback (parameters are value, index, array)
+ * @param Number timems (in milliseconds)
+ * @return undefined
+ */
+ysm.array.forEachTime = function(arr, callback, timems, finish) {
+   var i = 0;
+   (function c() {
+       if (i < arr.length) {
+           callback(arr[i], i, arr);
+           i++;
+           if (i === arr.length) {if (finish) { return finish(); }}
+           else { setTimeout(c, timems); }
+       }
+   })();
+}
+
+/**
+ * Run a function for each item inside an array, infinitely, using a timeout
+ * @param Array arr
+ * @param Function callback (parameters are value, index, array)
+ * @param Number timems (in milliseconds)
+ * @return undefined
+ */
+ysm.array.forEachTimeLoop = function(arr, callback, timems) {
+   var i = 0;
+   (function c() {
+       if (i < arr.length) {
+           callback(arr[i], i, arr);
+           i++;
+           if (i === arr.length) { i = 0; }
+           setTimeout(c, timems);
+       }
+   })();
 }
