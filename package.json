@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Lightweight Node.js Stellar Account Listener with Configurable Callback",
   "author": "KN",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "body-parser": "^1.18.2",

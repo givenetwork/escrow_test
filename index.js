@@ -91,6 +91,7 @@ app.get('/accounts',function(req,res) {
 });
 
 async function main() {
+  var agentAccount = await writeAccount(agent_account_id);
   startAgentListener(agent_account_id);
   startListeners();
   //setTimeout(readEvents, 5000);
