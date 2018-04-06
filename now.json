@@ -1,0 +1,9 @@
+{
+  "env" : {
+    "STELLAR_DOMAIN" : "@stellar-domain",
+    "STELLAR_NETWORK_NAME" : "@stellar-network-name",
+    "STELLAR_NETWORK_SEED" : "@stellar-network-seed",
+    "STELLAR_SERVER_URL" : "@stellar-server-url",
+    "AGENT_SIGNING_KEY" : "@agent-signing-key"
+  }
+}

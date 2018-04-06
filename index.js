@@ -1,4 +1,4 @@
-require('dotenv').config()
+require('now-env');
 
 var _ = require('lodash');
 const request = require('request')
@@ -17,13 +17,13 @@ const stellarNetworkName = process.env.STELLAR_NETWORK_NAME;
 const stellarNetworkSeed = process.env.STELLAR_NETWORK_SEED;
 StellarSdk.Network.use(new StellarSdk.Network(stellarNetworkSeed));
 
-const posix = require('posix');
-try {
-  posix.setrlimit('nofile', { soft: 10000 });
-}
-catch(err) {
-  console.log(err);
-}
+// const posix = require('posix');
+// try {
+//   posix.setrlimit('nofile', { soft: 10000 });
+// }
+// catch(err) {
+//   console.log(err);
+// }
 
 var msKeepAlive = 0;
 if ('KEEPALIVE_SECS' in process.env) {
@@ -41,7 +41,7 @@ function keepAlive() {
 
 var eventsDir = '/event_queue/';
 var responsesDir = '/responses/';
-var dataDir = 'tracking_data/' 
+var dataDir = 'tracking_data/'
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -168,7 +168,7 @@ function getEvent(acctId, hookId, msgId) {
     return JSON.parse(fs.readFileSync(msgFile, 'utf8'));
   } else {
     return null;
-  } 
+  }
 }
 
 function getEventResponseIds(acctId, hookId, msgId, matchstr) {
@@ -401,7 +401,7 @@ function getActiveClients() {
   var balances = agentData["balances"];
   for (tlIdx in balances) {
     tLine = balances[tlIdx];
- 
+
     if (tLine['asset_type'] == 'native'
           || tLine['asset_code'] != agent_asset_code)
     {
@@ -585,9 +585,9 @@ function getClientCredit(clientId) {
     }
   }
   return {
-    'limit': 0, 
-    'balance': '0', 
-    'asset_code': agent_asset_code, 
+    'limit': 0,
+    'balance': '0',
+    'asset_code': agent_asset_code,
     'asset_issuer': clientId
   };
 }
@@ -605,11 +605,11 @@ async function updateClientCredits() {
   var balances = agentData.balances;
   for (tIdx in balances) {
     var tLine = balances[tIdx];
-    if (tLine['asset_type'] == 'native' || 
+    if (tLine['asset_type'] == 'native' ||
         tLine['asset_code'] != agent_asset_code) {
       continue;
     }
-  
+
     tLine['limit'] = (parseFloat(tLine['limit']) / phi).toFixed(7);
     console.log('Updating trustline: ', JSON.stringify(tLine, null, 2));
 
@@ -625,7 +625,7 @@ async function updateClientCredits() {
       txn.sign(kp);
       try {
         var txnResult = await stellarServer.submitTransaction(txn);
-    
+
         console.log('Client credits updated: ',
             JSON.stringify(txnResult, null, 2));
       } catch(err) {
@@ -697,8 +697,8 @@ function postEvent(account, postURL, postTopic, message) {
 
   var postJSON = {
     'topic': postTopic,
-    'type': message.type, 
-    'id': message.id, 
+    'type': message.type,
+    'id': message.id,
     'extras': message.extras,
     'network': {
       'domain': stellarNetworkDomain,
@@ -746,7 +746,7 @@ function postEvent(account, postURL, postTopic, message) {
       //console.log('error:', error);
       //console.log('statusCode:', status_code);
       //console.log('body:', body);
- 
+
       resp = {}
       resp['status_code'] = status_code
       resp['event_id'] = message.id +'_'+status_code+'_'+(new Date()).toJSON();
@@ -793,7 +793,7 @@ function removeAccountListener(a) {
 
 async function activatePostURL(cursorData, acctId, topic, hookId, activate) {
   var postURL = cursorData['url'];
-  var postTopic = 'agent_events'; 
+  var postTopic = 'agent_events';
   var evt = {
     topic: postTopic,
     type: topic,
@@ -838,7 +838,7 @@ function startAgentListener(agentId) {
           var txnFee = 0.0000100; // should be txn fee from SDK (ledger lookup)
           var baseReserve = 0.5;  // should be reserve from SDK (ledger lookup)
           var updateCredit = false;
-          
+
           var fromId = message.from;
           var xlmAmount = parseFloat(message.amount);
           var sendRefund = false;
@@ -872,7 +872,7 @@ function startAgentListener(agentId) {
                 console.log("Account sent too little XLM, no refund issued.");
                 xlmAmount = 0;
 	      }
-            } 
+            }
 
           // If Client has requested deactivation and a refund
           } else if (xlmAmount.toFixed(7) == (txnFee * 3).toFixed(7)) {
@@ -1018,7 +1018,7 @@ function getAssetOperations(acctId, paging_token = null) {
   } else {
     graphql += '    first: 1,';
   }
-  graphql += 
+  graphql +=
 '  ), ' +
 '  { nodes { rowId, type } } ' +
 '}';
