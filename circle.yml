@@ -7,9 +7,6 @@ jobs:
       - checkout
       - restore_cache:
           key: escrow_test
-      - run: |
-          curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
-          unzip /tmp/convox.zip -d /usr/local/bin
       - run:
           name: Install dependencies
           command: yarn          
@@ -23,6 +20,9 @@ jobs:
       - image: circleci/node:7.10
     steps:
       - checkout
+      - run: |
+          curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
+          unzip /tmp/convox.zip -d /usr/local/bin
       - restore_cache:
           key: escrow_test
       - run: |
