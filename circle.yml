@@ -8,7 +8,6 @@ jobs:
       - restore_cache:
           key: escrow_test
       - run: |
-          curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
           curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
           unzip /tmp/convox.zip -d /usr/local/bin
       - run:
