@@ -1,24 +1,40 @@
-machine:
-  pre:
-    - curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
-    - curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
-    - unzip /tmp/convox.zip -d /usr/local/bin
-  node:
-    version: 6
-  services:
-    - docker
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/node:7.10
+    steps:
+      - checkout
+      - restore_cache:
+          key: escrow_test
+      - run: |
+          curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
+          curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
+          unzip /tmp/convox.zip -d /usr/local/bin
+      - run:
+          name: Install dependencies
+          command: yarn          
+      - save_cache:
+          key: escrow_test-{{ epoch }}
+          paths:
+            - ~/.yarn-cache
+            - node_modules
+  deploy:
+    docker:
+      - image: paflopes/node-circleci:6
+    steps:
+      - checkout
+      - restore_cache:
+          key: escrow_test
+      - run: |
+          convox deploy --app escrow-test --rack getty-io/gcloud-us-east-1
 
-dependencies:
-  pre:
-    - mkdir -p ~/.yarn ~/.yarn-cache
-    - rm -Rf node_modules
-    - curl -o- -L https://yarnpkg.com/install.sh | bash
-  cache_directories:
-    - "~/.yarn"
-    - "~/.yarn-cache"
-
-deployment:
-  production:
-    branch: tracking
-    commands:
-      - convox deploy --app escrow-test --rack getty-io/gcloud-us-east-1
+workflows:
+  version: 2
+  build_and_deploy:
+    jobs:
+      - build
+      - deploy:
+          filters:
+            branches:
+              only: tracking
