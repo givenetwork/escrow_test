@@ -42,6 +42,8 @@ var eventsDir = '/event_queue/';
 var responsesDir = '/responses/';
 var dataDir = 'tracking_data/'
 
+const dateOfBirth = new Date();
+app.use('/health', (req, res) => res.status(200).json({ version: 1.0, dateOfBirth }));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 

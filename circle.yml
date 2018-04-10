@@ -1,0 +1,39 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/node:7.10
+    steps:
+      - checkout
+      - restore_cache:
+          key: escrow_test
+      - run:
+          name: Install dependencies
+          command: yarn          
+      - save_cache:
+          key: escrow_test-{{ epoch }}
+          paths:
+            - ~/.yarn-cache
+            - node_modules
+  deploy:
+    docker:
+      - image: circleci/node:7.10
+    steps:
+      - checkout
+      - run: |
+          curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
+          unzip /tmp/convox.zip -d /usr/local/bin
+      - restore_cache:
+          key: escrow_test
+      - run: |
+          convox deploy --app escrow-test --rack getty-io/gcloud-us-east-1
+
+workflows:
+  version: 2
+  build_and_deploy:
+    jobs:
+      - build
+      - deploy:
+          filters:
+            branches:
+              only: tracking
