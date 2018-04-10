@@ -21,12 +21,14 @@ jobs:
     steps:
       - checkout
       - run: |
-          curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
-          unzip /tmp/convox.zip -d /usr/local/bin
+          curl -Ls https://convox.com/install/linux.zip > convox.zip
+          sudo unzip convox.zip -d /usr/local/bin
       - restore_cache:
           key: escrow_test
       - run: |
-          convox deploy --app escrow-test --rack getty-io/gcloud-us-east-1
+          convox login console.convox.com
+          convox switch getty-io/gcloud-us-east-1
+          convox deploy --app escrow-test --rack 
 
 workflows:
   version: 2
@@ -37,3 +39,4 @@ workflows:
           filters:
             branches:
               only: tracking
+              
