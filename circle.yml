@@ -27,6 +27,7 @@ jobs:
           key: escrow_test
       - run: |
           convox login console.convox.com
+          convox rack params set Internal=No
           convox switch getty-io/gcloud-us-east-1
           convox deploy --app escrow-test 
 
