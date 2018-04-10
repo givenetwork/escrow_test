@@ -1,0 +1,24 @@
+machine:
+  pre:
+    - curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
+    - curl -Ls https://convox.com/install/linux.zip > /tmp/convox.zip
+    - unzip /tmp/convox.zip -d /usr/local/bin
+  node:
+    version: 6
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - mkdir -p ~/.yarn ~/.yarn-cache
+    - rm -Rf node_modules
+    - curl -o- -L https://yarnpkg.com/install.sh | bash
+  cache_directories:
+    - "~/.yarn"
+    - "~/.yarn-cache"
+
+deployment:
+  production:
+    branch: tracking
+    commands:
+      - convox deploy --app escrow-test --rack getty-io/gcloud-us-east-1
