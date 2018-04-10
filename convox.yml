@@ -6,5 +6,5 @@ services:
     environment:
       - FOO=BAR
     health: /health
-    internal: true
+    internal: false
     port: 3000
