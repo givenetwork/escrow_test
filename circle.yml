@@ -20,7 +20,7 @@ jobs:
             - node_modules
   deploy:
     docker:
-      - image: paflopes/node-circleci:6
+      - image: circleci/node:7.10
     steps:
       - checkout
       - restore_cache:
