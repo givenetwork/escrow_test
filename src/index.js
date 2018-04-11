@@ -1,5 +1,5 @@
 require('now-env');
-
+require('dotenv').config()
 var _ = require('lodash');
 const request = require('request')
 const express = require('express');
@@ -10,11 +10,18 @@ const StellarSdk = require('stellar-sdk');
 const fs = require('fs');
 const glob = require('glob-fs')({ builtins: false });
 
-const stellarServer = new StellarSdk.Server(process.env.STELLAR_SERVER_URL);
-const stellarNetworkDomain = process.env.STELLAR_DOMAIN;
-const stellarNetworkName = process.env.STELLAR_NETWORK_NAME;
-const stellarNetworkSeed = process.env.STELLAR_NETWORK_SEED;
+const STELLAR_DOMAIN="stellar.org"
+const STELLAR_NETWORK_NAME="TestNet"
+const STELLAR_NETWORK_SEED="Test SDF Network ; September 2015"
+const STELLAR_SERVER_URL="https://horizon-testnet.stellar.org"
+const AGENT_SIGNING_KEY="SCH4OVQGF33RT4EKFKZI44ANSBFPFZX7X4ZIDAJBWTULL6OS2LXR45VK"
+
+const stellarServer = new StellarSdk.Server(STELLAR_SERVER_URL);
+const stellarNetworkDomain = STELLAR_DOMAIN;
+const stellarNetworkName = STELLAR_NETWORK_NAME;
+const stellarNetworkSeed = STELLAR_NETWORK_SEED;
 StellarSdk.Network.use(new StellarSdk.Network(stellarNetworkSeed));
+console.log('Node Version: '+process.version);
 
 // const posix = require('posix');
 // try {
@@ -52,7 +59,7 @@ var agent_account_id = "no signing key provided";
 var agent_asset_code = 'STELLARWATCH';
 
 if ('AGENT_SIGNING_KEY' in process.env) {
-  var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+  var kp = StellarSdk.Keypair.fromSecret(AGENT_SIGNING_KEY);
   agent_account_id = kp.publicKey();
 }
 
@@ -594,7 +601,7 @@ async function updateClientCredits() {
   var baseReserve = 0.5;  // should be reserve from SDK (ledger lookup)
   const phi = 1.618033988749895
 
-  var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+  var kp = StellarSdk.Keypair.fromSecret(AGENT_SIGNING_KEY);
   var agentAccount = await writeAccount(kp.publicKey());
   var txn = new StellarSdk.TransactionBuilder(agentAccount);
 
@@ -710,7 +717,7 @@ function postEvent(account, postURL, postTopic, message) {
   var public_key = "no signing key provided";
   var signature = "no signing key provided";
   if ('AGENT_SIGNING_KEY' in process.env) {
-    var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+    var kp = StellarSdk.Keypair.fromSecret(AGENT_SIGNING_KEY);
     public_key = kp.publicKey();
     signature = kp.sign(postBody).toString('hex');
   }
@@ -900,7 +907,7 @@ function startAgentListener(agentId) {
           // if agentId allowed to send XLM to itself; it's an infinite loop
           var refundSent = sendRefund && (fromId == agentId);
           if (fromId != agentId) {
-            var kp = StellarSdk.Keypair.fromSecret(process.env.AGENT_SIGNING_KEY);
+            var kp = StellarSdk.Keypair.fromSecret(AGENT_SIGNING_KEY);
             var agentAccount = await writeAccount(kp.publicKey());
 
             var transaction = new StellarSdk.TransactionBuilder(agentAccount);

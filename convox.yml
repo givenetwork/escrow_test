@@ -1,7 +1,4 @@
 services:
   web:
-    domain: escrow.gettydata.com
-    environment:
-      - FOO=BAR
     health: /health
     port: 3000
