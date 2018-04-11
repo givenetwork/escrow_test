@@ -2,3 +2,4 @@ services:
   web:
     health: /health
     port: 3000
+
