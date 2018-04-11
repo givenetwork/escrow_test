@@ -28,8 +28,7 @@ jobs:
       - run: |
           convox login console.convox.com
           convox switch getty-io/gcloud-us-east-1
-          convox deploy --app escrow-test --rack 
-
+          convox deploy --app escrow-test 
 workflows:
   version: 2
   build_and_deploy:
