@@ -28,7 +28,8 @@ jobs:
       - run: |
           convox login console.convox.com
           convox switch getty-io/gcloud-us-east-1
-          convox deploy --app escrow-test 
+          convox update
+          convox deploy --app escrow-test --no-cache
 
 workflows:
   version: 2
