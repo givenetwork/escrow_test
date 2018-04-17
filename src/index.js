@@ -10,10 +10,10 @@ const StellarSdk = require('stellar-sdk');
 const fs = require('fs');
 const glob = require('glob-fs')({ builtins: false });
 
-const STELLAR_DOMAIN="stellar.org"
-const STELLAR_NETWORK_NAME="TestNet"
-const STELLAR_NETWORK_SEED="Test SDF Network ; September 2015"
-const STELLAR_SERVER_URL="https://horizon-testnet.stellar.org"
+const STELLAR_DOMAIN = process.env.STELLAR_DOMAIN
+const STELLAR_NETWORK_NAME = process.env.STELLAR_NETWORK_NAME
+const STELLAR_NETWORK_SEED = process.env.STELLAR_NETWORK_SEED
+const STELLAR_SERVER_URL = process.env.STELLAR_SERVER_URL
 const AGENT_SIGNING_KEY="SCH4OVQGF33RT4EKFKZI44ANSBFPFZX7X4ZIDAJBWTULL6OS2LXR45VK"
 
 const stellarServer = new StellarSdk.Server(STELLAR_SERVER_URL);
