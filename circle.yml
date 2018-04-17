@@ -28,7 +28,7 @@ jobs:
       - run: |
           convox login console.convox.com
           convox switch getty-io/gcloud-us-east-1
-          convox update
+          sudo convox update
           convox deploy --app escrow-test --no-cache
 
 workflows:
