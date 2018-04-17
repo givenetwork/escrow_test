@@ -50,7 +50,7 @@ var responsesDir = '/responses/';
 var dataDir = 'tracking_data/'
 
 const dateOfBirth = new Date();
-app.use('/health', (req, res) => res.status(200).json({ version: 1.0, dateOfBirth }));
+app.use('/health', (req, res) => res.status(200).json({ agent_id: agent_account_id, version: 1.0, dateOfBirth, pwd: process.env.PWD }));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 

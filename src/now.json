@@ -1,9 +1,0 @@
-{
-  "env" : {
-    "STELLAR_DOMAIN" : "stellar.org",
-    "STELLAR_NETWORK_NAME" : "TestNet",
-    "STELLAR_NETWORK_SEED" : "Test SDF Network ; September 2015",
-    "STELLAR_SERVER_URL" : "https://horizon-testnet.stellar.org",
-    "AGENT_SIGNING_KEY" : "@giveescrow-agent-signing-key"
-  }
-}
