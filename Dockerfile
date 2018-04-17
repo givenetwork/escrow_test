@@ -1,9 +1,9 @@
-FROM node:6-alpine
+FROM node:9-alpine
 
 WORKDIR /home/user/escrow
 
 COPY src src/
-COPY yarn.lock package.json ./
+COPY yarn.lock now.json now-secrets.json package.json ./
 
 RUN apk add --no-cache --virtual .build-deps \
       python make g++ \

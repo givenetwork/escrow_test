@@ -1,10 +1,4 @@
 services:
   web:
-    build: .
-    domain: escrow.gettydata.com
-    command: bin/web
-    environment:
-      - FOO=BAR
     health: /health
-    internal: false
     port: 3000
