@@ -1,5 +1,4 @@
 require('now-env');
-require('dotenv').config()
 var _ = require('lodash');
 const request = require('request')
 const express = require('express');
@@ -14,7 +13,7 @@ const STELLAR_DOMAIN = process.env.STELLAR_DOMAIN
 const STELLAR_NETWORK_NAME = process.env.STELLAR_NETWORK_NAME
 const STELLAR_NETWORK_SEED = process.env.STELLAR_NETWORK_SEED
 const STELLAR_SERVER_URL = process.env.STELLAR_SERVER_URL
-const AGENT_SIGNING_KEY="SCH4OVQGF33RT4EKFKZI44ANSBFPFZX7X4ZIDAJBWTULL6OS2LXR45VK"
+const AGENT_SIGNING_KEY= process.env.AGENT_SIGNING_KEY
 
 const stellarServer = new StellarSdk.Server(STELLAR_SERVER_URL);
 const stellarNetworkDomain = STELLAR_DOMAIN;
